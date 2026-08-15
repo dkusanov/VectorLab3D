@@ -4,7 +4,7 @@
 
 Created by **Danilo S. Kusanovic**, Assistant Professor of Teaching, Civil and Environmental Engineering, University of California, Davis.
 
-![VectorLab 3D demo](assets/vector-visualizer-demo.gif)
+![VectorLab 3D demo](vector-visualizer-demo.gif)
 
 ## Features
 
