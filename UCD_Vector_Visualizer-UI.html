@@ -1,0 +1,2229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VectorLab 3D - Interactive Vector Algebra Laboratory</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+    /*
+     * -----------------------------------------------------------------
+     * Theming: CSS custom properties ("CSS variables")
+     * -----------------------------------------------------------------
+     * Every color used in this stylesheet is written as var(--name),
+     * pointing at a custom property declared here on :root. This is the
+     * standard "design token" pattern: instead of hard-coding a hex
+     * color in dozens of individual rules, each rule references a named
+     * variable, so re-theming the whole app just means re-defining a
+     * handful of variables somewhere with higher CSS specificity.
+     *
+     * That is exactly what the `[data-theme="light"]` block right below
+     * does: it only overrides the subset of variables that actually
+     * differ between dark and light mode (mostly backgrounds, text, and
+     * borders -- the axis colors --axis-x/y/z and accent colors stay the
+     * same in both themes, so vectors and axes read consistently either
+     * way). App.applyTheme() (in the JS further down this file) flips
+     * themes simply by setting the `data-theme` attribute on <html>; the browser's
+     * normal CSS cascade then re-resolves every var(...) reference and
+     * repaints automatically -- no JS re-rendering of the 2D UI needed.
+     * -----------------------------------------------------------------
+     */
+    :root {
+        --bg-dark: #08090c;
+        --bg-panel: #1c1f26;
+        --bg-toolbar: #050608;
+        --panel-header-bg: #0a0b0e;
+        --text-light: #f0f2f5;
+        --text-muted: #a9afb8;
+        --accent: #2f6bff;
+        --accent-hover: #4b80ff;
+        --border: #2c313c;
+        --canvas-bg: #060a12;
+        --grid-color: #131a26;
+        --grid-major: #1c2636;
+        --tree-selected: #2878d7;
+
+        --axis-x: #ff5c5c;
+        --axis-y: #4fd06a;
+        --axis-z: #4dabf7;
+        --point-color: #4ade80;
+        --origin-color: #4dabf7;
+        --select-color: #33e0ff;
+        --construction-color: #9aa4b2;
+        --plane-color: #7c5cff;
+        --zero-color: #ff4d4f;
+        --label-text: #d8dde6;
+    }
+
+    /* Light-theme overrides: only the custom properties that need to
+       change when data-theme="light" is set on <html>. Anything not
+       redefined here (--accent, --axis-x/-y/-z, --point-color, etc.) is
+       simply inherited unchanged from :root above. */
+    [data-theme="light"] {
+        --bg-dark: #eef1f5;
+        --bg-panel: #ffffff;
+        --bg-toolbar: #e4e7ec;
+        --text-light: #1a1d23;
+        --text-muted: #5b6472;
+        --border: #ccd2db;
+        --canvas-bg: #f3f5f8;
+        --grid-color: #d8dde4;
+        --grid-major: #c2c9d3;
+        --panel-header-bg: #eaedf1;
+        --tree-selected: #2878d7;
+        --label-text: #252a32;
+    }
+
+    /* Global reset. user-select:none keeps mouse drags in the 3D
+       viewport (orbit / pan / click-to-place-a-point) from accidentally
+       highlighting page text, which matters for a click-and-drag,
+       CAD-like interface like this one. */
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body { height: 100%; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-dark); color: var(--text-light); height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
+
+    .brand { display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--text-light); margin-right: 6px; white-space: nowrap; padding: 4px 6px; }
+    .brand svg { flex-shrink: 0; }
+    .brand .brand-badge { background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.3px; }
+
+    .menubar { background-color: var(--bg-toolbar); border-bottom: 1px solid var(--border); padding: 0 10px; font-size: 13px; display: flex; gap: 2px; align-items: center; height: 45px; flex-shrink: 0; }
+    .menu-item { cursor: pointer; padding: 6px 10px; border-radius: 4px; transition: background 0.15s; color: var(--text-light); display: flex; align-items: center; gap: 7px; background: transparent; border: none; font: inherit; }
+    .menu-item:hover { background-color: rgba(255,255,255,0.08); }
+    [data-theme="light"] .menu-item:hover { background-color: rgba(0,0,0,0.06); }
+
+    .theme-btn { margin-left: auto; background: transparent; border: 1px solid var(--border); color: var(--text-light); width: 32px; height: 32px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .theme-btn:hover { background: rgba(255,255,255,0.08); }
+    [data-theme="light"] .theme-btn:hover { background: rgba(0,0,0,0.06); }
+
+    .dropdown { position: relative; display: inline-flex; align-items: stretch; }
+    .dropdown-content {
+        display: none; position: absolute; background-color: var(--bg-panel);
+        min-width: 225px; box-shadow: 0 8px 20px rgba(0,0,0,0.5); z-index: 2500;
+        border: 1px solid var(--border); border-radius: 6px; top: calc(100% - 1px); left: 0;
+        padding: 5px 0; flex-direction: column;
+    }
+    .dropdown-content::before { content: ''; position: absolute; left: 0; right: 0; top: -7px; height: 7px; }
+    .dropdown-content .menu-item { padding: 8px 14px; display: flex; border-radius: 0; width: 100%; text-align: left; font-size: 12.5px; }
+    .dropdown-content .menu-item i, .dropdown-content .menu-item svg, .dropdown-content .menu-item .mi-w { width: 16px; text-align: center; flex-shrink: 0; }
+    .dropdown-content .menu-item:hover { background-color: rgba(255,255,255,0.08); }
+    [data-theme="light"] .dropdown-content .menu-item:hover { background-color: rgba(0,0,0,0.06); }
+    .dropdown.open > .dropdown-content { display: flex; }
+    .menu-sep { border-top: 1px solid var(--border); margin: 4px 0; }
+    .menu-svg { width: 18px !important; height: 18px; overflow: visible; }
+
+    .toolbar { background-color: var(--bg-toolbar); padding: 0 12px; display: flex; gap: 4px; align-items: center; border-bottom: 1px solid var(--border); overflow-x: auto; height: 51px; flex-shrink: 0; }
+    .tool-group { display: flex; gap: 4px; border-right: 1px solid var(--border); padding-right: 10px; margin-right: 6px; align-items: center; height: 38px; flex-shrink: 0; }
+    .tool-group:last-child { border-right: none; }
+    .tool-btn { background: transparent; border: 1px solid transparent; color: var(--text-light); width: 34px; height: 34px; border-radius: 6px; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: all 0.15s; position: relative; font-size: 13px; font-weight: 600; }
+    .tool-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--border); }
+    [data-theme="light"] .tool-btn:hover { background: rgba(0,0,0,0.06); }
+    .tool-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .tool-btn:disabled:hover { background: transparent; border-color: transparent; }
+    .tool-btn i { font-size: 15px; }
+    .tool-btn svg { width: 19px; height: 19px; }
+    /* The "math tool" buttons (v&#770;, +v, &minus;v, &times;, cos(&middot;), &Vert;v&Vert;)
+       render their label in italic serif math notation rather than an
+       icon, so a student sees familiar textbook symbols for each vector
+       operation (normalize, add, subtract, cross product, direction
+       cosines, magnitude) instead of a generic toolbar glyph. */
+    .tool-btn.math-tool { width: 38px; font-size: 13px; font-style: italic; font-family: 'Cambria Math', 'STIX Two Math', Georgia, serif; }
+    .tool-btn[title]:hover::after { content: attr(title); position: absolute; top: 42px; left: 50%; transform: translateX(-50%); background: #000; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; z-index: 100; pointer-events: none; }
+    .tool-btn:focus-visible, .menu-item:focus-visible, .action-btn:focus-visible, .theme-btn:focus-visible { outline: 2px solid var(--select-color); outline-offset: 1px; }
+
+    /* Three-pane, CAD-style layout: a "Working Tree" list panel on the
+       left, the 3D canvas filling the middle, and a "Properties" panel
+       on the right. Flexbox lays the .panel / .canvas-container / .panel
+       children out in a row; only the canvas container is flexible
+       (flex: 1), so the two side panels keep their fixed width. */
+    .workspace { display: flex; flex: 1; min-height: 0; }
+
+    .panel { background-color: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; width: 280px; flex-shrink: 0; min-width: 190px; }
+    .panel-right { border-left: 1px solid var(--border); border-right: none; width: 296px; }
+    .panel-header { background-color: var(--panel-header-bg); padding: 9px 12px; font-weight: 600; font-size: 11px; border-bottom: 1px solid var(--border); letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-light); display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+    .panel-header i { opacity: 0.85; font-size: 11px; }
+    .panel-content { flex: 1; overflow-y: auto; padding: 8px; font-size: 12.5px; }
+
+    .tree-section-title { font-weight: 700; margin: 10px 6px 4px; color: var(--text-muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .tree-section-title:first-child { margin-top: 4px; }
+    .tree-item { padding: 5px 8px; cursor: pointer; border-radius: 3px; display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 1px 0; }
+    .tree-item:hover { background-color: rgba(255,255,255,0.08); }
+    [data-theme="light"] .tree-item:hover { background-color: rgba(0,0,0,0.06); }
+    .tree-item.selected { background-color: var(--tree-selected); color: #fff; }
+    .tree-item-left { display: flex; align-items: center; gap: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tree-item-status { font-size: 10.5px; color: var(--text-muted); flex-shrink: 0; }
+    .tree-item.selected .tree-item-status { color: rgba(255,255,255,0.85); }
+    .tree-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--point-color); flex-shrink: 0; display: inline-block; }
+    .tree-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; flex-shrink: 0; }
+    .tree-order-badge { background: var(--accent); color: #fff; border-radius: 3px; font-size: 9.5px; font-weight: 700; padding: 0 4px; flex-shrink: 0; }
+
+    .canvas-container { flex: 1; position: relative; background-color: var(--canvas-bg); overflow: hidden; min-width: 0; }
+    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; outline: none; display: block; }
+    /* The 3D scene is drawn by WebGL into a <canvas>, which can only
+       rasterize pixels -- it has no notion of selectable, theme-aware
+       DOM text. To get crisp text labels (point coordinates, vector
+       names, angle symbols) this app overlays a plain HTML layer on top
+       of the canvas and re-projects each label's 3D world position to a
+       2D screen (x, y) pixel position every frame -- see
+       Scene3D.screenPos() and App.updateLabelPositions() further down.
+       pointer-events:none lets clicks/drags pass straight through this
+       layer to the canvas underneath, so labels never block picking. */
+    #label-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+    .vlabel { position: absolute; transform: translate(-50%, -100%); font-size: 12px; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.6); font-weight: 600; pointer-events: none; }
+    .vlabel.point-label { font-weight: 500; font-size: 11.5px; }
+    .vlabel.angle-label { font-style: italic; font-size: 12px; }
+    [data-theme="light"] .vlabel { text-shadow: none; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+
+    #tool-hint { position: absolute; top: 10px; left: 10px; z-index: 40; background: rgba(10,12,16,0.78); border: 1px solid var(--border); color: var(--text-light); padding: 6px 12px; border-radius: 6px; font-size: 12px; display: none; align-items: center; gap: 8px; pointer-events: none; }
+    [data-theme="light"] #tool-hint { background: rgba(255,255,255,0.9); }
+    #plane-indicator { position: absolute; bottom: 10px; left: 10px; z-index: 40; background: rgba(10,12,16,0.78); border: 1px solid var(--border); color: var(--text-muted); padding: 4px 10px; border-radius: 6px; font-size: 11px; pointer-events: none; }
+    [data-theme="light"] #plane-indicator { background: rgba(255,255,255,0.9); }
+
+    .statusbar { background-color: var(--bg-toolbar); border-top: 1px solid var(--border); height: 29px; flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 0 14px; font-size: 11.5px; color: var(--text-muted); }
+    .statusbar .status-group { display: flex; align-items: center; gap: 6px; }
+    .statusbar .status-sep { width: 1px; height: 14px; background: var(--border); }
+    .statusbar i { font-size: 10px; }
+    #status-hint { color: var(--select-color); font-weight: 600; }
+
+    .prop-group { margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+    .prop-group:last-child { border-bottom: none; }
+    .prop-heading { font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 7px; }
+    .prop-subheading { font-weight: 700; margin-bottom: 8px; font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; display: flex; align-items: center; gap: 6px; }
+    .prop-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; }
+    .prop-label { color: var(--text-muted); font-size: 12px; }
+    .prop-val { background: var(--bg-dark); border: 1px solid var(--border); color: var(--text-light); padding: 5px 7px; border-radius: 3px; width: 138px; font-size: 12px; outline: none; text-align: right; font-family: inherit; }
+    .prop-val:focus { border-color: var(--accent); }
+    .prop-val:disabled { opacity: 0.65; }
+    select.prop-val { padding: 3px; text-align: left; }
+    input[type=color].prop-val { padding: 2px; width: 46px; cursor: pointer; }
+    input[type=checkbox].prop-val { width: auto; text-align: left; transform: scale(1.15); cursor: pointer; }
+    .action-btn { background: var(--bg-toolbar); color: var(--text-light); border: 1px solid var(--border); padding: 6px 10px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 5px; font-size: 12px; transition: 0.2s;}
+    .action-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
+    .btn-danger:hover { background: #fa5252; border-color: #fa5252; color: white;}
+    .status-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+    .warn-box { background: rgba(255,77,79,0.12); border: 1px solid var(--zero-color); color: var(--text-light); padding: 8px 10px; border-radius: 4px; font-size: 11.5px; line-height: 1.5; margin-bottom: 10px; }
+    .info-box { background: rgba(47,107,255,0.12); border: 1px solid var(--accent); color: var(--text-light); padding: 8px 10px; border-radius: 4px; font-size: 11.5px; line-height: 1.5; margin-bottom: 10px; }
+
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-dark); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--accent); color: white; padding: 8px 16px; border-radius: 4px; font-size: 13px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 3000;}
+
+    /* Shared modal-dialog component: the same .modal-overlay / .modal
+       markup pattern is reused below in the HTML for the "Save As",
+       "Settings", and "About" dialogs. Each starts hidden
+       (display:none) until App.openSettings()/openAbout()/saveModel(true)
+       sets its display to flex; App.closeModals() hides all of them
+       again in one shot. */
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 2000; backdrop-filter: blur(2px); }
+    .modal { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; width: 420px; max-width: 90%; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow: hidden; }
+    .modal-header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 14px; background: var(--bg-toolbar); }
+    .modal-close { cursor: pointer; color: var(--text-muted); transition: 0.2s; }
+    .modal-close:hover { color: var(--text-light); }
+    .modal-body { padding: 20px; font-size: 13px; overflow-y: auto; }
+    .modal-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; background: var(--bg-toolbar); }
+
+    .form-group { margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .form-group label { color: var(--text-muted); font-weight: 500; }
+    .form-control { background: var(--bg-dark); border: 1px solid var(--border); color: var(--text-light); padding: 6px 10px; border-radius: 4px; outline: none; width: 150px; font-family: inherit;}
+    .form-control:focus { border-color: var(--accent); }
+    .form-control[type="checkbox"] { width: auto; transform: scale(1.2); cursor: pointer; }
+</style>
+</head>
+<body>
+
+    <div class="menubar">
+        <div class="brand">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 21 L14 4" stroke="var(--axis-x)" stroke-width="2" stroke-linecap="round"/><path d="M3 21 L21 15" stroke="var(--axis-y)" stroke-width="2" stroke-linecap="round"/><path d="M14 4 L21 15" stroke="var(--axis-z)" stroke-width="2" stroke-linecap="round"/><circle cx="3" cy="21" r="1.6" fill="#fff"/><circle cx="14" cy="4" r="1.6" fill="var(--axis-x)"/><circle cx="21" cy="15" r="1.6" fill="var(--axis-y)"/></svg>
+            <span>VectorLab</span><span class="brand-badge">3D</span>
+        </div>
+        <div class="dropdown">
+            <button class="menu-item menu-trigger" type="button" aria-haspopup="true" aria-expanded="false">File</button>
+            <div class="dropdown-content">
+                <button class="menu-item" onclick="App.newModel()"><i class="fas fa-file"></i> New</button>
+                <button class="menu-item" onclick="App.openModel()"><i class="fas fa-folder-open"></i> Open...</button>
+                <button class="menu-item" onclick="App.saveModel()"><i class="fas fa-save"></i> Save</button>
+                <button class="menu-item" onclick="App.saveModel(true)"><i class="fas fa-file-export"></i> Save As...</button>
+                <div class="menu-sep"></div>
+                <button class="menu-item" onclick="App.exportViewAsPNG()"><i class="fas fa-image"></i> Export View as PNG</button>
+            </div>
+        </div>
+        <div class="dropdown">
+            <button class="menu-item menu-trigger" type="button" aria-haspopup="true" aria-expanded="false">Edit</button>
+            <div class="dropdown-content">
+                <button class="menu-item" onclick="App.setTool('select')"><i class="fas fa-mouse-pointer"></i> Select</button>
+                <button class="menu-item" onclick="App.setTool('point')"><i class="fas fa-circle" style="font-size:8px"></i> Add Point</button>
+                <button class="menu-item" onclick="App.setTool('vector')"><span class="mi-w"><i class="fas fa-arrow-right"></i></span> Draw Vector</button>
+                <button class="menu-item" onclick="App.deleteSelected()"><i class="fas fa-trash-alt"></i> Delete Selected</button>
+                <div class="menu-sep"></div>
+                <button class="menu-item" onclick="App.clearAll()"><i class="fas fa-broom"></i> Clear All</button>
+            </div>
+        </div>
+        <div class="dropdown">
+            <button class="menu-item menu-trigger" type="button" aria-haspopup="true" aria-expanded="false">View</button>
+            <div class="dropdown-content">
+                <button class="menu-item" onclick="App.openSettings()"><i class="fas fa-cog"></i> Settings</button>
+                <div class="menu-sep"></div>
+                <button class="menu-item" onclick="App.toggleSetting('showGrid')"><i class="fas fa-border-all"></i> Toggle Grid</button>
+                <button class="menu-item" onclick="App.toggleSetting('showLabels')"><i class="fas fa-tag"></i> Toggle Labels</button>
+                <button class="menu-item" onclick="App.toggleSetting('showAxes')"><i class="fas fa-arrows-alt"></i> Toggle Axes</button>
+                <button class="menu-item" onclick="App.toggleSetting('showAux')"><i class="fas fa-shapes"></i> Toggle Auxiliary Geometry</button>
+                <button class="menu-item" onclick="App.zoomExtents()"><i class="fas fa-compress"></i> Zoom / Fit Extents</button>
+                <div class="menu-sep"></div>
+                <button class="menu-item" onclick="App.setCameraPreset('iso')"><i class="fas fa-cube"></i> Camera: Isometric</button>
+                <button class="menu-item" onclick="App.setCameraPreset('xy')"><i class="fas fa-square"></i> Camera: XY</button>
+                <button class="menu-item" onclick="App.setCameraPreset('xz')"><i class="fas fa-square"></i> Camera: XZ</button>
+                <button class="menu-item" onclick="App.setCameraPreset('yz')"><i class="fas fa-square"></i> Camera: YZ</button>
+                <div class="menu-sep"></div>
+                <button class="menu-item" onclick="App.toggleTheme()"><i class="fas fa-adjust"></i> Toggle Theme</button>
+            </div>
+        </div>
+        <button class="menu-item" onclick="App.openAbout()"><i class="fas fa-info-circle"></i> About</button>
+        <button class="theme-btn" id="theme-toggle-btn" title="Toggle theme" aria-label="Toggle light/dark theme" onclick="App.toggleTheme()"><i class="fas fa-sun" id="theme-icon"></i></button>
+    </div>
+
+    <div class="toolbar">
+        <div class="tool-group">
+            <button class="tool-btn" title="New" aria-label="New model" onclick="App.newModel()"><i class="fas fa-file"></i></button>
+            <button class="tool-btn" title="Open" aria-label="Open model" onclick="App.openModel()"><i class="fas fa-folder-open"></i></button>
+            <button class="tool-btn" title="Save" aria-label="Save model" onclick="App.saveModel()"><i class="fas fa-save"></i></button>
+        </div>
+        <div class="tool-group">
+            <button class="tool-btn active" id="tool-select" title="Select (Esc)" aria-label="Select tool" onclick="App.setTool('select')"><i class="fas fa-mouse-pointer"></i></button>
+            <button class="tool-btn" id="tool-point" title="Point tool" aria-label="Point tool" onclick="App.setTool('point')"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="4.5" fill="currentColor"/></svg></button>
+            <button class="tool-btn" id="tool-vector" title="Vector tool" aria-label="Vector tool" onclick="App.setTool('vector')"><svg viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="22" r="2.1" fill="currentColor" stroke="none"/><line x1="5.5" y1="20.5" x2="21" y2="5"/><path d="M13 5 H21 V13"/></svg></button>
+        </div>
+        <div class="tool-group">
+            <button class="tool-btn math-tool" id="op-normalize" title="Normalize vector (v&#770;)" aria-label="Normalize vector" onclick="App.performOperation('normalize')">v&#770;</button>
+            <button class="tool-btn math-tool" id="op-add" title="Add vectors (+v)" aria-label="Add vectors" onclick="App.performOperation('add')">+v</button>
+            <button class="tool-btn math-tool" id="op-subtract" title="Subtract vectors (&minus;v)" aria-label="Subtract vectors" onclick="App.performOperation('subtract')">&minus;v</button>
+            <button class="tool-btn math-tool" id="op-cross" title="Cross product (&times;)" aria-label="Cross product" onclick="App.performOperation('cross')">&times;</button>
+            <button class="tool-btn math-tool" id="op-cosines" title="Direction cosines cos(&middot;)" aria-label="Direction cosines" onclick="App.performOperation('directionCosines')" style="width:46px">cos(&middot;)</button>
+            <button class="tool-btn math-tool" id="op-magnitude" title="Magnitude &Vert;v&Vert;" aria-label="Vector magnitude" onclick="App.performOperation('magnitude')" style="width:42px">&Vert; v &Vert;</button>
+        </div>
+        <div class="tool-group">
+            <button class="tool-btn" title="Zoom In" aria-label="Zoom in" onclick="App.zoomIn()"><i class="fas fa-search-plus"></i></button>
+            <button class="tool-btn" title="Zoom Out" aria-label="Zoom out" onclick="App.zoomOut()"><i class="fas fa-search-minus"></i></button>
+            <button class="tool-btn" title="Zoom / Fit Extents" aria-label="Fit view to extents" onclick="App.zoomExtents()"><i class="fas fa-compress"></i></button>
+        </div>
+    </div>
+
+    <div class="workspace">
+        <div class="panel">
+            <div class="panel-header"><i class="fas fa-code-branch"></i> Working Tree</div>
+            <div class="panel-content" id="tree-view"></div>
+        </div>
+
+        <div class="canvas-container" id="canvas-container">
+            <canvas id="mainCanvas"></canvas>
+            <div id="label-layer"></div>
+            <div id="tool-hint"></div>
+            <div id="plane-indicator">Plane: XY (z = 0.000)</div>
+        </div>
+
+        <div class="panel panel-right">
+            <div class="panel-header"><i class="fas fa-cog"></i> Properties</div>
+            <div class="panel-content" id="props-view">
+                <div style="color: var(--text-muted); text-align: center; margin-top: 20px;">Select an object to view properties.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="statusbar">
+        <div class="status-group"><i class="fas fa-mouse-pointer"></i><span id="coord-display">x: 0.000, y: 0.000, z: 0.000</span></div>
+        <div class="status-sep"></div>
+        <div class="status-group" title="Points"><span class="tree-dot"></span><span id="status-points">0</span></div>
+        <div class="status-group" title="Vectors"><i class="fas fa-arrow-right" style="color:var(--axis-z);"></i><span id="status-vectors">0</span></div>
+        <div class="status-group" title="Operations"><i class="fas fa-superscript" style="color:var(--accent);"></i><span id="status-operations">0</span></div>
+        <div class="status-sep"></div>
+        <div class="status-group" id="status-hint"></div>
+    </div>
+
+    <div id="toast"></div>
+
+    <!-- Save As Modal -->
+    <div class="modal-overlay" id="save-modal">
+        <div class="modal" style="width: 320px;">
+            <div class="modal-header">
+                <span><i class="fas fa-save"></i> Save Model As</span>
+                <i class="fas fa-times modal-close" onclick="App.closeModals()"></i>
+            </div>
+            <div class="modal-body">
+                <div class="form-group" style="flex-direction: column; align-items: flex-start;">
+                    <label style="margin-bottom: 5px;">File Name:</label>
+                    <input type="text" id="save-filename" class="form-control" value="vectorlab_model.json" style="width: 100%;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn" style="width: auto; background: transparent;" onclick="App.closeModals()">Cancel</button>
+                <button class="action-btn" style="width: auto; background: var(--accent); color: white;" onclick="App.executeSave()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span><i class="fas fa-cog"></i> Settings</span>
+                <i class="fas fa-times modal-close" onclick="App.closeModals()"></i>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Theme</label>
+                    <select class="form-control" id="set-theme">
+                        <option value="dark">Dark</option>
+                        <option value="light">Light</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Show Grid</label><input type="checkbox" class="form-control" id="set-showgrid"></div>
+                <div class="form-group"><label>Show Axes</label><input type="checkbox" class="form-control" id="set-showaxes"></div>
+                <div class="form-group"><label>Show Labels</label><input type="checkbox" class="form-control" id="set-showlabels"></div>
+                <div class="form-group"><label>Show Auxiliary Geometry</label><input type="checkbox" class="form-control" id="set-showaux"></div>
+                <div class="form-group"><label>Snap to Grid</label><input type="checkbox" class="form-control" id="set-snap"></div>
+                <div class="form-group"><label>Grid Spacing</label><input type="number" step="0.1" min="0.1" class="form-control" id="set-gridspacing"></div>
+                <div class="form-group"><label>Decimal Precision</label><input type="number" step="1" min="0" max="8" class="form-control" id="set-precision"></div>
+                <div class="form-group">
+                    <label>Construction Plane</label>
+                    <select class="form-control" id="set-plane">
+                        <option value="XY">XY (z = offset)</option>
+                        <option value="XZ">XZ (y = offset)</option>
+                        <option value="YZ">YZ (x = offset)</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Plane Offset</label><input type="number" step="0.5" class="form-control" id="set-planeoffset"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn" style="width: auto; background: transparent;" onclick="App.closeModals()">Cancel</button>
+                <button class="action-btn" style="width: auto; background: var(--accent); color: white;" onclick="App.saveSettings()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div class="modal-overlay" id="about-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <span><i class="fas fa-info-circle"></i> About VectorLab 3D</span>
+                <i class="fas fa-times modal-close" onclick="App.closeModals()"></i>
+            </div>
+            <div class="modal-body" style="text-align: center; padding: 30px 20px;">
+                <h2 style="color: var(--accent); margin-bottom: 10px;">VectorLab 3D</h2>
+                <p style="margin-bottom: 5px;"><strong>Version:</strong> 1.0.0</p>
+                <p style="margin-bottom: 4px;"><strong>Danilo S. Kusanovic</strong></p>
+                <p style="margin-bottom: 4px; color: var(--text-muted);">Assistant Professor of Teaching</p>
+                <p style="margin-bottom: 4px; color: var(--text-muted);">Civil and Environmental Engineering</p>
+                <p style="margin-bottom: 18px; color: var(--text-muted);">University of California Davis</p>
+                <p style="color: var(--text-muted); line-height: 1.5; font-size: 13px;">
+                    An interactive educational tool for exploring 3D vector geometry and vector algebra:
+                    points, free and bound vectors, addition and subtraction, the cross product, unit vectors,
+                    and direction cosines, all visualized in a true Z-up mathematical coordinate system.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn" style="width: auto;" onclick="App.closeModals()">Close</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+/**
+ * VectorLab 3D
+ * Author: Danilo S. Kusanovic, Assistant Professor of Teaching,
+ * Civil and Environmental Engineering, University of California Davis
+ * Description: Interactive 3D vector-algebra laboratory built on Three.js.
+ * Coordinate convention: true Z-up mathematics/engineering convention (x,y,z) with z vertical.
+ *
+ * ---------------------------------------------------------------------
+ * Why Z-up?
+ * ---------------------------------------------------------------------
+ * Most 3D graphics libraries and game engines -- Three.js included --
+ * treat Y as "up" by default, because that matches how a camera/screen
+ * is usually framed (Y = vertical screen axis, Z = depth toward/away
+ * from the viewer). Engineering and physics textbooks, by contrast,
+ * almost universally use a right-handed (x, y, z) frame with Z as the
+ * vertical axis: x-y is treated as a horizontal "ground plane" and z as
+ * height, exactly as points and vectors are described in a statics or
+ * vector-algebra course. To make the on-screen geometry match the
+ * textbook -- a point's z-coordinate really does look like "height" --
+ * this app reconfigures Three.js's default up direction instead of
+ * relabeling axes: see Scene3D.init(), which sets
+ * `camera.up.set(0, 0, 1)` (and every camera preset in
+ * Scene3D.setCameraPreset), so Three.js orbits and renders around a
+ * Z-up world even though its internal defaults assume Y-up.
+ *
+ * ---------------------------------------------------------------------
+ * Architecture at a glance
+ * ---------------------------------------------------------------------
+ *  - VectorMath  : pure, framework-free vector algebra (dot, cross,
+ *                  magnitude, normalize, direction cosines/angles, ...).
+ *                  Operates on plain {x, y, z} objects -- no Three.js.
+ *  - model layer : plain, JSON-serializable data -- points, vectors,
+ *                  and operations (see createEmptyModel / addPoint /
+ *                  addVector* / addOperation / resolveAll below). This
+ *                  is the single source of truth; it knows nothing
+ *                  about rendering.
+ *  - Scene3D     : owns the Three.js camera, renderer, and
+ *                  OrbitControls, plus the scene graph of arrow/point/
+ *                  grid meshes. It reads the *resolved* model geometry
+ *                  and draws it; it never mutates the model.
+ *  - App         : the UI layer -- toolbar/menu wiring, mouse and
+ *                  keyboard interaction, the Working Tree and
+ *                  Properties panels, and file save/load. It mediates
+ *                  between the model and Scene3D, calling refresh()
+ *                  whenever the model or selection changes so the 3D
+ *                  view and side panels stay in sync.
+ */
+
+const EPS = 1e-10; // numerical tolerance for "is this basically zero / parallel / equal" checks
+
+/* ------------------------------------------------------------------ */
+/* VectorMath — pure numeric vector algebra, independent of Three.js  */
+/*                                                                    */
+/* Every vector here is a plain object {x, y, z} — there is no vector */
+/* "class", just functions that take/return {x,y,z} literals. This    */
+/* mirrors how a textbook writes v = (vx, vy, vz) and keeps the math  */
+/* trivially reusable and independent of the 3D rendering code below. */
+/*                                                                    */
+/* Quick formula reference (a, b are vectors, v a single vector):     */
+/*   dot(a,b)   = ax*bx + ay*by + az*bz                    (a · b)    */
+/*   cross(a,b) = (ay*bz - az*by, az*bx - ax*bz, ax*by - ay*bx) (a×b) */
+/*     — this is the determinant expansion of                        */
+/*         | i   j   k  |                                             */
+/*         | ax  ay  az |                                             */
+/*         | bx  by  bz |                                             */
+/*       and the result is always perpendicular to both a and b.      */
+/*   magnitude(v) = sqrt(vx^2 + vy^2 + vz^2)                 (‖v‖)     */
+/*   normalize(v) = v / ‖v‖                                   (v̂)     */
+/*   directionCosines(v) = (vx/‖v‖, vy/‖v‖, vz/‖v‖)                    */
+/*     — the cosines of the angles v makes with the x, y, z axes.     */
+/*   directionAngles(v) = acos(directionCosines(v))       (α, β, γ)   */
+/*   angleBetween(a,b) = acos( (a·b) / (‖a‖ ‖b‖) )                     */
+/*     — rearranges the identity a·b = ‖a‖ ‖b‖ cos(θ) to solve for θ.  */
+/* ------------------------------------------------------------------ */
+const VectorMath = {
+    add(...vs) { return vs.reduce((acc, v) => ({ x: acc.x + v.x, y: acc.y + v.y, z: acc.z + v.z }), { x: 0, y: 0, z: 0 }); },
+    sub(a, b) { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; },
+    scale(v, s) { return { x: v.x * s, y: v.y * s, z: v.z * s }; },
+    dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; },
+    cross(a, b) { return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x }; }, // a × b: right-hand-rule normal to both a and b
+    magnitude(v) { return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z); },
+    nearZero(v) { return this.magnitude(v) < EPS; },
+    normalize(v) { const m = this.magnitude(v); if (m < EPS) return null; return { x: v.x / m, y: v.y / m, z: v.z / m }; },
+    directionCosines(v) { const m = this.magnitude(v); if (m < EPS) return null; return { cosA: v.x / m, cosB: v.y / m, cosG: v.z / m }; }, // cos α, cos β, cos γ = the unit vector's own components
+    directionAngles(v) {
+        const c = this.directionCosines(v); if (!c) return null;
+        const cl = x => this.clamp(x, -1, 1);
+        return { alpha: Math.acos(cl(c.cosA)), beta: Math.acos(cl(c.cosB)), gamma: Math.acos(cl(c.cosG)) };
+    },
+    angleBetween(a, b) {
+        const ma = this.magnitude(a), mb = this.magnitude(b);
+        if (ma < EPS || mb < EPS) return null;
+        return Math.acos(this.clamp(this.dot(a, b) / (ma * mb), -1, 1));
+    },
+    clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); },
+    rad2deg(r) { return r * 180 / Math.PI; }
+};
+
+/* ------------------------------------------------------------------ */
+/* Model helpers — plain serializable data, no Three.js references    */
+/*                                                                    */
+/* The "model" is the app's document: an object holding arrays of     */
+/* points, vectors, and operations, each with a unique numeric id     */
+/* (see createEmptyModel below). It is exactly what gets written out  */
+/* by App.saveModel()/serializeModel() — plain JSON, no THREE.* types */
+/* and no DOM references — so it can be saved, reloaded, or inspected */
+/* independently of the 3D view.                                     */
+/*                                                                    */
+/* Bound vs. free vectors, and derived (operation) vectors:           */
+/*   - A BOUND vector stores two point ids (tailPointId, headPointId) */
+/*     instead of coordinates: it always tracks those points, so      */
+/*     dragging/editing a point automatically moves every vector      */
+/*     bound to it (see resolveAll below).                            */
+/*   - A FREE vector stores its own literal {x,y,z} tail/head          */
+/*     coordinates directly and is not tied to any point.             */
+/*   - A vector produced by a math operation (source:'operation') has */
+/*     no stored geometry at all: its tail/head are recomputed every  */
+/*     refresh() by resolveAll() from its operation's inputs, so it   */
+/*     automatically stays correct if an upstream vector changes.     */
+/* ------------------------------------------------------------------ */
+const ORIGIN_POINT = { id: 0, name: 'O', x: 0, y: 0, z: 0, color: '#4dabf7', visible: true, isOrigin: true }; // the fixed (0,0,0) reference point; reserved id 0, never stored in model.points
+const VECTOR_PALETTE = ['#ffd43b', '#22d3ee', '#f472b6', '#84cc16', '#a78bfa', '#fb923c', '#f87171', '#34d399', '#60a5fa', '#e879f9'];
+const OP_LABELS = { normalize: 'Normalize', add: 'Addition', subtract: 'Subtraction', cross: 'Cross', directionCosines: 'Cosines', magnitude: 'Magnitude' };
+const OP_SYMBOL = { normalize: 'v&#770;', add: '+', subtract: '&minus;', cross: '&times;', directionCosines: 'cos', magnitude: '&Vert;&middot;&Vert;' };
+
+function createEmptyModel() {
+    return { version: 1, points: [], vectors: [], operations: [], nextPointId: 1, nextVectorId: 1, nextOperationId: 1 };
+}
+
+function getPointById(model, id) {
+    if (id === 0 || id === null || id === undefined) return id === 0 ? ORIGIN_POINT : null;
+    return model.points.find(p => p.id === id) || null;
+}
+function getVectorById(model, id) { return model.vectors.find(v => v.id === id) || null; }
+function getOperationById(model, id) { return model.operations.find(o => o.id === id) || null; }
+
+function addPoint(model, coords, opts = {}) {
+    const id = model.nextPointId++;
+    const point = { id, name: 'P' + id, x: coords.x, y: coords.y, z: coords.z, color: opts.color || '#4ade80', visible: true };
+    model.points.push(point);
+    return point;
+}
+function nextVectorColor(model) { return VECTOR_PALETTE[(model.nextVectorId - 1) % VECTOR_PALETTE.length]; }
+function addVectorBound(model, tailPointId, headPointId) {
+    const id = model.nextVectorId++;
+    const vector = { id, name: 'V' + id, source: 'defined', type: 'bound', tailPointId, headPointId, tail: null, head: null, color: nextVectorColor(model), visible: true, operationId: null };
+    model.vectors.push(vector);
+    return vector;
+}
+function addVectorFree(model, tail, head) {
+    const id = model.nextVectorId++;
+    const vector = { id, name: 'V' + id, source: 'defined', type: 'free', tailPointId: null, headPointId: null, tail: { x: tail.x, y: tail.y, z: tail.z }, head: { x: head.x, y: head.y, z: head.z }, color: nextVectorColor(model), visible: true, operationId: null };
+    model.vectors.push(vector);
+    return vector;
+}
+function addVectorFromOperation(model, operationId) {
+    const id = model.nextVectorId++;
+    const vector = { id, name: 'V' + id, source: 'operation', type: 'free', tailPointId: null, headPointId: null, tail: null, head: null, color: nextVectorColor(model), visible: true, operationId };
+    model.vectors.push(vector);
+    return vector;
+}
+function addOperation(model, type, inputVectorIds, resultVectorId, typeIndex) {
+    const id = model.nextOperationId++;
+    const operation = { id, type, name: OP_LABELS[type] + ' ' + typeIndex, typeIndex, inputVectorIds: inputVectorIds.slice(), resultVectorId: resultVectorId || null, showAux: true };
+    model.operations.push(operation);
+    return operation;
+}
+
+/* Resolve every vector's current tail/head/component geometry, honoring
+   dependency order: defined vectors first (from points), then operations
+   in creation order (a vector can only be selected as an operation input
+   after it already exists, so this order is always dependency-safe).
+
+   Returns a map vectorId -> { tail, head, v, zero }, where `v` is the
+   free-vector component form (head - tail) — matching the textbook idea
+   that a vector's *position* doesn't matter, only its components.
+   Operation results are anchored at the first input's tail so
+   multi-vector results are drawn tip-to-tail on screen:
+     add(a, b, ...)      -> v = a + b + ...           (vector sum)
+     subtract(a, b, ...) -> v = a - b - ...           (in selection order)
+     cross(a, b)         -> v = a × b                 (normal to a and b)
+     normalize(a)        -> v = â = a / ‖a‖            (unit vector) */
+function resolveAll(model) {
+    const resolved = {};
+    const pointCoords = (id) => { const p = getPointById(model, id); return p ? { x: p.x, y: p.y, z: p.z } : { x: 0, y: 0, z: 0 }; };
+
+    model.vectors.filter(v => v.source === 'defined').forEach(v => {
+        let tail, head;
+        if (v.type === 'bound') { tail = pointCoords(v.tailPointId); head = pointCoords(v.headPointId); }
+        else { tail = { ...v.tail }; head = { ...v.head }; }
+        const comp = VectorMath.sub(head, tail);
+        resolved[v.id] = { tail, head, v: comp, zero: VectorMath.nearZero(comp) };
+    });
+
+    model.operations.forEach(op => {
+        const inputs = op.inputVectorIds.map(id => resolved[id]).filter(Boolean);
+        if (inputs.length !== op.inputVectorIds.length) return;
+        if (op.type === 'normalize' && op.resultVectorId) {
+            const n = VectorMath.normalize(inputs[0].v);
+            const tail = { ...inputs[0].tail };
+            if (!n) resolved[op.resultVectorId] = { tail, head: { ...tail }, v: { x: 0, y: 0, z: 0 }, zero: true, undefinedResult: true };
+            else { const head = VectorMath.add(tail, n); resolved[op.resultVectorId] = { tail, head, v: n, zero: false }; }
+        } else if (op.type === 'add' && op.resultVectorId) {
+            const tail = { ...inputs[0].tail };
+            const sum = inputs.reduce((acc, i) => VectorMath.add(acc, i.v), { x: 0, y: 0, z: 0 });
+            resolved[op.resultVectorId] = { tail, head: VectorMath.add(tail, sum), v: sum, zero: VectorMath.nearZero(sum) };
+        } else if (op.type === 'subtract' && op.resultVectorId) {
+            const tail = { ...inputs[0].tail };
+            let diff = { ...inputs[0].v };
+            for (let i = 1; i < inputs.length; i++) diff = VectorMath.sub(diff, inputs[i].v);
+            resolved[op.resultVectorId] = { tail, head: VectorMath.add(tail, diff), v: diff, zero: VectorMath.nearZero(diff) };
+        } else if (op.type === 'cross' && op.resultVectorId) {
+            const tail = { ...inputs[0].tail };
+            const n = VectorMath.cross(inputs[0].v, inputs[1].v);
+            resolved[op.resultVectorId] = { tail, head: VectorMath.add(tail, n), v: n, zero: VectorMath.nearZero(n) };
+        }
+    });
+    return resolved;
+}
+
+/* ---- dependency-graph helpers, used for cascading deletes ----
+   Deleting a point or vector that other vectors/operations were built
+   from would otherwise leave those derived objects dangling. These two
+   helpers walk the dependency graph — operation inputs -> result vector
+   -> further operations, or a bound vector -> its endpoint points — so
+   the UI can warn the user and remove a whole dependent chain together
+   (see App.deletePoint / deleteVector / deleteOperation below). */
+function collectDependentOperationIds(model, vectorId, collected) {
+    collected = collected || new Set();
+    model.operations.forEach(op => {
+        if (op.inputVectorIds.includes(vectorId) && !collected.has(op.id)) {
+            collected.add(op.id);
+            if (op.resultVectorId) collectDependentOperationIds(model, op.resultVectorId, collected);
+        }
+    });
+    return collected;
+}
+function collectDependentVectorIdsForPoint(model, pointId) {
+    return model.vectors.filter(v => v.type === 'bound' && (v.tailPointId === pointId || v.headPointId === pointId)).map(v => v.id);
+}
+
+/* Some bright accent colors (used for point/vector markers) are nearly
+   unreadable as text on the light theme's white background. This keeps
+   a color's hue but darkens its HSL lightness for label text only when
+   the light theme is active; dark theme just uses the color as-is. */
+function getLabelColor(color) {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    if (!isLight) return color;
+    if (!color || color.startsWith('var(')) return color;
+
+    const c = new THREE.Color(color);
+    const hsl = {};
+    c.getHSL(hsl);
+    c.setHSL(hsl.h, Math.min(hsl.s * 0.95, 1), Math.min(hsl.l, 0.32));
+    return '#' + c.getHexString();
+}
+
+/* ------------------------------------------------------------------ */
+/* Scene3D — Three.js rendering, isolated from the serializable model */
+/*                                                                    */
+/* Owns every Three.js object: the Scene graph, PerspectiveCamera,    */
+/* WebGLRenderer, and OrbitControls (mouse-driven orbit/pan/zoom).    */
+/* Two top-level groups separate geometry that rarely changes from    */
+/* geometry rebuilt on every model edit:                              */
+/*   staticGroup  — axes, tick marks, and the XY/XZ/YZ grids.         */
+/*   dynamicGroup — point spheres, vector arrows, and per-operation   */
+/*     auxiliary geometry (tip-to-tail dashed arrows, cross-product   */
+/*     parallelograms, direction-cosine angle arcs). App.rebuildScene */
+/*     clears and repopulates this group on every App.refresh().     */
+/* Scene3D never reaches into App's model directly — App reads the    */
+/* resolved geometry (resolveAll) and tells Scene3D what to draw.     */
+/* ------------------------------------------------------------------ */
+const Scene3D = {
+    scene: null, camera: null, renderer: null, controls: null,
+    dynamicGroup: null, staticGroup: null, labelLayer: null,
+    labels: [], axisExtent: 10, raycaster: null,
+    pointMeshes: [], vectorMeshes: [],
+
+    init(canvas, labelLayer) {
+        this.labelLayer = labelLayer;
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(50, 1, 0.01, 5000);
+        this.camera.up.set(0, 0, 1); // Z-up world: see the file header comment — overrides Three.js's Y-up default
+        this.camera.position.set(12, -14, 10);
+
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+        const dir1 = new THREE.DirectionalLight(0xffffff, 0.55); dir1.position.set(8, -10, 14); this.scene.add(dir1);
+        const dir2 = new THREE.DirectionalLight(0xffffff, 0.25); dir2.position.set(-8, 8, -6); this.scene.add(dir2);
+
+        // OrbitControls turns mouse drag/wheel input into camera orbit/pan/zoom
+        // around `controls.target`; left-drag rotates, the wheel dollies (zooms),
+        // and (see App.bindEvents below) Alt+left-drag pans instead of rotating.
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.target.set(0, 0, 0);
+        this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: null };
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.08;
+        this.controls.update();
+
+        this.staticGroup = new THREE.Group(); this.scene.add(this.staticGroup);
+        this.dynamicGroup = new THREE.Group(); this.scene.add(this.dynamicGroup);
+        this.raycaster = new THREE.Raycaster();
+
+        this.buildStaticGeometry();
+    },
+
+    resize(width, height) {
+        this.camera.aspect = width / Math.max(1, height);
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(width, height, false);
+    },
+
+    /* ---- static axes / grid / ticks ---- */
+    buildStaticGeometry() {
+        this.staticGroup.clear();
+        this.staticLabels = [];
+        const ext = this.axisExtent;
+        const axisColors = { x: 0xff5c5c, y: 0x4fd06a, z: 0x4dabf7 };
+
+        const makeAxisLine = (dir, color) => {
+            const length = 2 * ext;
+            const radius = 0.0085;   // axis thickness
+
+            const geom = new THREE.CylinderGeometry(
+                radius,
+                radius,
+                length,
+                8
+            );
+
+            const mat = new THREE.MeshBasicMaterial({ color });
+            const axis = new THREE.Mesh(geom, mat);
+
+            // CylinderGeometry is aligned with local Y by default
+            axis.quaternion.setFromUnitVectors(
+                new THREE.Vector3(0, 1, 0),
+                new THREE.Vector3(dir.x, dir.y, dir.z).normalize()
+            );
+
+            axis.userData.isAxis = true;
+            this.staticGroup.add(axis);
+        };
+        makeAxisLine({ x: 1, y: 0, z: 0 }, axisColors.x);
+        makeAxisLine({ x: 0, y: 1, z: 0 }, axisColors.y);
+        makeAxisLine({ x: 0, y: 0, z: 1 }, axisColors.z);
+
+        // arrowheads at positive ends
+        const headAt = (pos, dir, color) => {
+            const geom = new THREE.ConeGeometry(0.09, 0.32, 10);
+            geom.translate(0, 0.16, 0);
+            const mesh = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color }));
+            mesh.position.set(pos.x, pos.y, pos.z);
+            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dir.x, dir.y, dir.z));
+            mesh.userData.isAxis = true;
+            this.staticGroup.add(mesh);
+        };
+        headAt({ x: ext, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, axisColors.x);
+        headAt({ x: 0, y: ext, z: 0 }, { x: 0, y: 1, z: 0 }, axisColors.y);
+        headAt({ x: 0, y: 0, z: ext }, { x: 0, y: 0, z: 1 }, axisColors.z);
+
+        // ticks + numeric labels on each axis
+        const tickStep = ext > 20 ? 5 : ext > 10 ? 2 : 1;
+        const tickMat = new THREE.LineBasicMaterial({ color: new THREE.Color(getComputedStyleColor('--text-muted')) });
+        for (let t = -ext; t <= ext; t += tickStep) {
+            if (Math.abs(t) < 1e-9) continue;
+            [{ a: 'x', p: [t, 0, 0], d: [0, 0.12, 0] }, { a: 'y', p: [0, t, 0], d: [0.12, 0, 0] }, { a: 'z', p: [0, 0, t], d: [0.12, 0, 0] }].forEach(cfg => {
+                const p0 = new THREE.Vector3(...cfg.p);
+                const p1 = p0.clone().add(new THREE.Vector3(...cfg.d));
+                const geom = new THREE.BufferGeometry().setFromPoints([p0, p1]);
+                this.staticGroup.add(new THREE.Line(geom, tickMat.clone()));
+                this.staticLabels.push({ text: String(t), pos: p0.clone(), cls: 'tick-label', color: 'var(--label-text)' });
+            });
+        }
+        this.staticLabels.push({ text: 'X', pos: new THREE.Vector3(ext + 0.5, 0, 0), cls: 'axis-label', color: '#ff5c5c' });
+        this.staticLabels.push({ text: 'Y', pos: new THREE.Vector3(0, ext + 0.5, 0), cls: 'axis-label', color: '#4fd06a' });
+        this.staticLabels.push({ text: 'Z', pos: new THREE.Vector3(0, 0, ext + 0.5), cls: 'axis-label', color: '#4dabf7' });
+        this.staticLabels.push({ text: 'O(0,0,0)', pos: new THREE.Vector3(0, 0, 0), cls: 'origin-label', color: '#4dabf7' });
+
+        // reference grids in XY (primary) and optional XZ / YZ — colored from the
+        // current theme's --grid-color so they stay visible in both dark and light mode.
+        const gridColor = new THREE.Color(getComputedStyleColor('--grid-color'));
+        this.gridXY = this.buildGrid('XY', ext, gridColor);
+        this.gridXZ = this.buildGrid('XZ', ext, gridColor);
+        this.gridYZ = this.buildGrid('YZ', ext, gridColor);
+        this.staticGroup.add(this.gridXY, this.gridXZ, this.gridYZ);
+    },
+
+    buildGrid(plane, ext, color) {
+        const group = new THREE.Group();
+        const step = 1;
+        const minorMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 });
+        const pts = [];
+        for (let i = -ext; i <= ext; i += step) {
+            if (plane === 'XY') { pts.push(new THREE.Vector3(i, -ext, 0), new THREE.Vector3(i, ext, 0), new THREE.Vector3(-ext, i, 0), new THREE.Vector3(ext, i, 0)); }
+            else if (plane === 'XZ') { pts.push(new THREE.Vector3(i, 0, -ext), new THREE.Vector3(i, 0, ext), new THREE.Vector3(-ext, 0, i), new THREE.Vector3(ext, 0, i)); }
+            else { pts.push(new THREE.Vector3(0, i, -ext), new THREE.Vector3(0, i, ext), new THREE.Vector3(0, -ext, i), new THREE.Vector3(0, ext, i)); }
+        }
+        const geom = new THREE.BufferGeometry().setFromPoints(pts);
+        group.add(new THREE.LineSegments(geom, minorMat));
+        group.userData.gridPlane = plane;
+        group.visible = plane === 'XY';
+        return group;
+    },
+
+    setPlaneVisibility(active, showAux) {
+        this.gridXY.visible = active === 'XY' || (showAux === false ? active === 'XY' : true) && active === 'XY';
+        this.gridXY.visible = true; // XY always shown as the base reference plane
+        this.gridXZ.visible = showAux && active === 'XZ';
+        this.gridYZ.visible = showAux && active === 'YZ';
+    },
+
+    setAxisExtent(ext) {
+        this.axisExtent = Math.max(5, Math.ceil(ext));
+        this.buildStaticGeometry();
+    },
+
+    /* Re-reads the current theme's CSS variables and applies them to the WebGL
+       viewport background and the static grid/tick geometry (rebuilt so their
+       materials pick up the new colors). Axis colors stay constant by design. */
+    syncThemeColors() {
+        this.renderer.setClearColor(new THREE.Color(getComputedStyleColor('--canvas-bg')), 1);
+        this.buildStaticGeometry();
+    },
+
+    /* ---- dynamic geometry: points, vectors, operation aux ---- */
+    clearDynamic() {
+        this.dynamicGroup.traverse(obj => { if (obj.geometry) obj.geometry.dispose(); if (obj.material) (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(m => m.dispose()); });
+        this.dynamicGroup.clear();
+        this.pointMeshes = [];
+        this.vectorMeshes = [];
+        this.labels = [];
+    },
+
+    v3(o) { return new THREE.Vector3(o.x, o.y, o.z); },
+
+    addLabel(text, worldPos, opts) {
+        opts = opts || {};
+        this.labels.push({ text, pos: worldPos.clone(), cls: opts.cls || '', color: opts.color || '#f0f2f5' });
+    },
+
+    /* Builds one vector arrow as a Group: a cylinder "shaft" plus a cone
+       "head", sized from `length` = |head - tail|. Three.js primitives
+       (CylinderGeometry / ConeGeometry) are authored pointing along
+       local +Y by default, so the group is rotated with a quaternion
+       that rotates local +Y onto the vector's actual direction
+       (setFromUnitVectors), then positioned so its local origin sits at
+       `tail`. This is the same "rotate a canonical shape onto a
+       direction" trick used for the axis lines/arrowheads above. */
+    buildArrow(tail, head, color, opts) {
+        opts = opts || {};
+        const group = new THREE.Group();
+        const dir = new THREE.Vector3().subVectors(head, tail);
+        const length = dir.length();
+        if (length < EPS) return null;
+        dir.normalize();
+        const shaftRadius = opts.shaftRadius || 0.045;
+        const headRadius = opts.headRadius || shaftRadius * 2.3;
+        const headLength = Math.min(opts.headLength || 0.32, length * 0.4);
+        const shaftLength = Math.max(length - headLength, 0.0005);
+
+        const shaftGeom = new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength, 12);
+        shaftGeom.translate(0, shaftLength / 2, 0);
+        const headGeom = new THREE.ConeGeometry(headRadius, headLength, 16);
+        headGeom.translate(0, shaftLength + headLength / 2, 0);
+
+        const material = new THREE.MeshPhongMaterial({ color, shininess: 40, transparent: opts.opacity !== undefined, opacity: opts.opacity !== undefined ? opts.opacity : 1 });
+        const shaft = new THREE.Mesh(shaftGeom, material);
+        const head3 = new THREE.Mesh(headGeom, material);
+        group.add(shaft, head3);
+        group.position.copy(tail);
+        group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        group.userData.hitRadius = shaftRadius * 3;
+        group.userData.length = length;
+        group.userData.tail = tail.clone();
+        group.userData.head = head.clone();
+        return group;
+    },
+
+    buildDashedArrow(tail, head, color) { return this.buildArrow(tail, head, color, { shaftRadius: 0.02, headRadius: 0.05, headLength: 0.16, opacity: 0.55 }); },
+
+    buildZeroMarker(tail, color) {
+        const geom = new THREE.OctahedronGeometry(0.13, 0);
+        const mat = new THREE.MeshBasicMaterial({ color, wireframe: true });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.copy(tail);
+        return mesh;
+    },
+
+    /* Traces an arc between two *unit* vectors u1, u2 around a common
+       center — used to draw the small angle arcs for direction cosines
+       (α, β, γ). This is spherical linear interpolation (slerp): for the
+       angle θ = acos(u1 · u2) between the unit vectors, each point at
+       parameter t ∈ [0,1] is
+         p(t) = ( sin((1-t)θ)/sin θ ) · u1 + ( sin(tθ)/sin θ ) · u2
+       which stays unit length and sweeps at constant angular speed from
+       u1 to u2, then is scaled by `radius` and offset to `center`. */
+    buildArcPoints(center, u1, u2, radius, segments) {
+        segments = segments || 28;
+        const pts = [];
+        const dot = VectorMath.clamp(u1.dot(u2), -1, 1);
+        const theta = Math.acos(dot);
+        if (theta < 1e-5) return null;
+        const sinTheta = Math.sin(theta);
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            const a = Math.sin((1 - t) * theta) / sinTheta;
+            const b = Math.sin(t * theta) / sinTheta;
+            const v = new THREE.Vector3(u1.x * a + u2.x * b, u1.y * a + u2.y * b, u1.z * a + u2.z * b).multiplyScalar(radius).add(center);
+            pts.push(v);
+        }
+        return pts;
+    },
+
+    /* ---- camera framing ("zoom to fit") ----
+       fitExtentsData computes a bounding sphere (center + radius) around
+       a set of world points; applyFit then moves the camera straight out
+       along its current viewing direction until that sphere fits inside
+       the field of view (basic trig: radius / sin(fov/2) gives the
+       distance at which a sphere of that radius exactly fills the
+       frame; the 1.35 factor adds a comfortable margin). */
+    fitExtentsData(points) {
+        if (points.length === 0) return { center: new THREE.Vector3(0, 0, 0), radius: 8 };
+        const box = new THREE.Box3();
+        points.forEach(p => box.expandByPoint(p));
+        const center = box.getCenter(new THREE.Vector3());
+        const radius = Math.max(4, box.getSize(new THREE.Vector3()).length() / 2);
+        return { center, radius };
+    },
+
+    applyFit(center, radius) {
+        const dir = new THREE.Vector3().subVectors(this.camera.position, this.controls.target);
+        if (dir.lengthSq() < 1e-6) dir.set(1, -1, 1);
+        dir.normalize();
+        const distance = radius / Math.sin((this.camera.fov * Math.PI / 180) / 2) * 1.35;
+        this.controls.target.copy(center);
+        this.camera.position.copy(center).addScaledVector(dir, distance);
+        this.controls.update();
+    },
+
+    setCameraPreset(preset, distance) {
+        const target = this.controls.target.clone();
+        distance = distance || Math.max(14, this.camera.position.distanceTo(this.controls.target));
+        if (preset === 'iso') { this.camera.up.set(0, 0, 1); this.camera.position.set(target.x + distance * 0.6, target.y - distance * 0.6, target.z + distance * 0.5); }
+        else if (preset === 'xy') { this.camera.up.set(0, 1, 0); this.camera.position.set(target.x, target.y, target.z + distance); }
+        else if (preset === 'xz') { this.camera.up.set(0, 0, 1); this.camera.position.set(target.x, target.y - distance, target.z); }
+        else if (preset === 'yz') { this.camera.up.set(0, 0, 1); this.camera.position.set(target.x + distance, target.y, target.z); }
+        this.controls.update();
+    },
+
+    dolly(factor) {
+        const offset = new THREE.Vector3().subVectors(this.camera.position, this.controls.target).multiplyScalar(factor);
+        this.camera.position.copy(this.controls.target).add(offset);
+        this.controls.update();
+    },
+
+    /* Projects a 3D world position through the camera into Normalized
+       Device Coordinates (NDC — each axis in [-1, 1]) via
+       THREE.Vector3.project(), then remaps NDC into pixel coordinates of
+       the canvas (flipping Y, since screen Y grows downward while NDC Y
+       grows upward). Called every frame by App.updateLabelPositions() to
+       keep the HTML label overlay glued to its 3D point/vector as the
+       camera orbits/pans/zooms. */
+    screenPos(worldVec3) {
+        const v = worldVec3.clone().project(this.camera);
+        const w = this.renderer.domElement.clientWidth, h = this.renderer.domElement.clientHeight;
+        return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, visible: v.z < 1 };
+    },
+
+    render() { this.controls.update(); this.renderer.render(this.scene, this.camera); } // one frame: apply damped orbit motion, then draw
+};
+
+/* ------------------------------------------------------------------  */
+/* App — UI state, workflows, selection, tree/properties, file IO      */
+/*                                                                     */
+/* `App` is a single global object (no framework, no classes) holding  */
+/* both the current document (`model`) and pure UI state (`state`,     */
+/* `settings`) that is never part of the saved geometry. The general   */
+/* flow for almost every user action is:                               */
+/*   1. mutate `this.model` (add/remove a point, vector, operation…).  */
+/*   2. call `this.refresh()`, which re-derives `this.resolved` (via   */
+/*      resolveAll), rebuilds the Three.js scene, and re-renders the   */
+/*      Working Tree / Properties HTML panels from scratch.            */
+/* There is no virtual DOM or diffing: panel HTML is rebuilt with      */
+/* template strings on every refresh() — simple, and fast enough for   */
+/* the small object counts this app deals with.                        */
+/* ------------------------------------------------------------------  */
+const App = {
+    model: createEmptyModel(),
+    resolved: {},
+    opTypeCounters: { normalize: 0, add: 0, subtract: 0, cross: 0, directionCosines: 0, magnitude: 0 },
+
+    /* Transient UI state — never saved to file, reset on newModel()/openModel(). */
+    state: {
+        tool: 'select',
+        selection: { items: [] }, // ordered [{type:'point'|'vector', id}]
+        selectedOperationId: null,
+        hover: null,
+        vectorDraft: null, // {tailPointId, tail:THREE.Vector3}
+        isDragging: false,
+        dragStart: null,
+        lastMouse: { clientX: 0, clientY: 0 }
+    },
+
+    /* User-configurable display/workflow settings — saved alongside the
+       model in serializeModel() so a reloaded file remembers its view
+       preferences (grid, precision, construction plane, etc). */
+    settings: {
+        theme: 'dark',
+        showGrid: true,
+        showAxes: true,
+        showLabels: true,
+        showAux: true,
+        snap: false,
+        gridSpacing: 1,
+        precision: 3,
+        constructionPlane: 'XY',
+        constructionOffset: 0
+    },
+
+    /* App bootstrap, called once from window.onload at the bottom of this
+       file: wires up the 3D scene, applies the default theme, binds
+       menu/toolbar/mouse/keyboard event handlers, sizes the canvas to
+       its container, creates a fresh empty model, and starts the
+       render loop. */
+    init() {
+        const canvas = document.getElementById('mainCanvas');
+        const labelLayer = document.getElementById('label-layer');
+        Scene3D.init(canvas, labelLayer);
+        this.applyTheme();
+        this.initMenuBar();
+        this.bindEvents();
+        this.resizeCanvas();
+        window.addEventListener('resize', () => this.resizeCanvas());
+        this.newModel();
+        this.setTool('select');
+        requestAnimationFrame(() => this.loop());
+    },
+
+    /* The render loop: requestAnimationFrame drives both the Three.js
+       redraw (damped OrbitControls need to be ticked every frame even
+       with no new input) and the HTML label re-projection, so labels
+       track the 3D scene smoothly as the camera moves. */
+    loop() {
+        Scene3D.render();
+        this.updateLabelPositions();
+        requestAnimationFrame(() => this.loop());
+    },
+
+    resizeCanvas() {
+        const container = document.getElementById('canvas-container');
+        Scene3D.resize(container.clientWidth, container.clientHeight);
+    },
+
+    /* ---------------- model lifecycle ----------------
+       newModel()/clearAll() reset the document; refresh() is the single
+       "re-derive everything from the model" entry point called after any
+       edit — it re-resolves vector geometry, rebuilds the 3D scene, and
+       redraws the Working Tree and Properties panels. */
+    newModel() {
+        this.model = createEmptyModel();
+        this.opTypeCounters = { normalize: 0, add: 0, subtract: 0, cross: 0, directionCosines: 0, magnitude: 0 };
+        this.state.selection = { items: [] };
+        this.state.selectedOperationId = null;
+        this.state.vectorDraft = null;
+        this.setTool('select');
+        Scene3D.setAxisExtent(10);
+        Scene3D.setCameraPreset('iso', 16);
+        Scene3D.controls.target.set(0, 0, 0);
+        Scene3D.controls.update();
+        this.refresh();
+        this.closeMenus && this.closeMenus();
+        this.showToast('New model created');
+    },
+
+    clearAll() {
+        if (this.model.points.length === 0 && this.model.vectors.length === 0 && this.model.operations.length === 0) return;
+        if (!confirm('Clear all points, vectors, and operations?')) return;
+        this.model.points = []; this.model.vectors = []; this.model.operations = [];
+        this.state.selection = { items: [] }; this.state.selectedOperationId = null;
+        this.refresh();
+        this.showToast('Model cleared');
+    },
+
+    refresh() {
+        this.resolved = resolveAll(this.model);
+        this.rebuildScene();
+        this.updateWorkingTree();
+        this.updateProperties();
+        this.updateStatusBar();
+    },
+
+    /* ---------------- selection model ----------------
+       Selection is an ordered list of {type:'point'|'vector', id}
+       items (order matters: e.g. for subtract/cross, which vector is
+       "first" changes the result), plus a separate, mutually-exclusive
+       `selectedOperationId` for when an entry in the Operations list is
+       selected instead of a point/vector. */
+    clearSelection() { this.state.selection.items = []; this.state.selectedOperationId = null; },
+
+    selectSingle(type, id) {
+        this.state.selectedOperationId = null;
+        this.state.selection.items = [{ type, id }];
+        this.refresh();
+    },
+    selectOperation(id) {
+        this.state.selection.items = [];
+        this.state.selectedOperationId = id;
+        this.refresh();
+    },
+    toggleSelect(type, id) {
+        this.state.selectedOperationId = null;
+        const items = this.state.selection.items;
+        const idx = items.findIndex(i => i.type === type && i.id === id);
+        if (idx >= 0) items.splice(idx, 1); else items.push({ type, id });
+        this.refresh();
+    },
+    isSelected(type, id) { return this.state.selection.items.some(i => i.type === type && i.id === id); },
+    getSelectedVectorIds() { return this.state.selection.items.filter(i => i.type === 'vector').map(i => i.id); },
+    getPrimarySelection() { return this.state.selection.items[0] || null; },
+
+    /* ---------------- tools ----------------
+       Three mouse tools share the canvas: 'select' (click to pick /
+       shift-click to multi-select), 'point' (click the construction
+       plane to place a new point), and 'vector' (click a tail, then a
+       head, to draw a bound or free vector — see handleLeftClick and
+       the vectorDraft state below). */
+    setTool(tool) {
+        this.state.tool = tool;
+        this.state.vectorDraft = null;
+        document.querySelectorAll('.toolbar .tool-btn').forEach(b => b.classList.remove('active'));
+        const map = { select: 'tool-select', point: 'tool-point', vector: 'tool-vector' };
+        if (map[tool]) document.getElementById(map[tool]).classList.add('active');
+        this.updateStatusHint();
+        this.refresh();
+    },
+
+    updateStatusHint() {
+        const el = document.getElementById('status-hint');
+        let text = '';
+        if (this.state.tool === 'point') text = 'Click the construction plane to place a point';
+        else if (this.state.tool === 'vector') text = this.state.vectorDraft ? 'Select a head point or click to place the head' : 'Select a tail point or click to place the tail';
+        else {
+            const nSel = this.getSelectedVectorIds().length;
+            if (nSel === 1) text = 'Select one more vector for add/subtract/cross, or use v̂, cos(·), ‖v‖';
+            else if (nSel === 2) text = 'Ready: add, subtract, cross (×), or select more to add/subtract';
+            else if (nSel > 2) text = 'Ready: add or subtract (order preserved)';
+        }
+        el.textContent = text;
+        const hint = document.getElementById('tool-hint');
+        if (text && this.state.tool !== 'select') { hint.style.display = 'flex'; hint.textContent = text; } else { hint.style.display = 'none'; }
+    },
+
+    /* ---------------- construction plane ----------------
+       Like a CAD sketch plane: points/vectors are placed by
+       ray-casting the mouse against one infinite 2D plane (XY, XZ, or
+       YZ, optionally offset along its normal axis) rather than against
+       arbitrary 3D geometry, which makes "click somewhere in 3D space"
+       well-defined from a single 2D mouse position. */
+    getConstructionPlane() {
+        const { constructionPlane, constructionOffset } = this.settings;
+        if (constructionPlane === 'XY') return new THREE.Plane(new THREE.Vector3(0, 0, 1), -constructionOffset);
+        if (constructionPlane === 'XZ') return new THREE.Plane(new THREE.Vector3(0, 1, 0), -constructionOffset);
+        return new THREE.Plane(new THREE.Vector3(1, 0, 0), -constructionOffset);
+    },
+    snapPoint(v3) {
+        if (!this.settings.snap) return v3;
+        const gs = this.settings.gridSpacing || 1;
+        const round = n => Math.round(n / gs) * gs;
+        const p = { constructionPlane: this.settings.constructionPlane, o: this.settings.constructionOffset };
+        if (p.constructionPlane === 'XY') return new THREE.Vector3(round(v3.x), round(v3.y), p.o);
+        if (p.constructionPlane === 'XZ') return new THREE.Vector3(round(v3.x), p.o, round(v3.z));
+        return new THREE.Vector3(p.o, round(v3.y), round(v3.z));
+    },
+    updatePlaneIndicator() {
+        const { constructionPlane, constructionOffset } = this.settings;
+        const axis = constructionPlane === 'XY' ? 'z' : constructionPlane === 'XZ' ? 'y' : 'x';
+        document.getElementById('plane-indicator').textContent = `Plane: ${constructionPlane} (${axis} = ${constructionOffset.toFixed(3)})`;
+    },
+
+    /* ---------------- pointer / raycasting ----------------
+       Converts a mouse event's pixel position into Normalized Device
+       Coordinates (each axis in [-1, 1], the format THREE.Raycaster
+       expects) and casts a ray from the camera through that point,
+       either against the construction plane (to place points/vectors)
+       or against the existing point/vector meshes (to pick/select an
+       existing object). This mirrors, in reverse, the projection done
+       by Scene3D.screenPos() for label placement. */
+    ndcFromEvent(e) {
+        const rect = Scene3D.renderer.domElement.getBoundingClientRect();
+        return new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    },
+    raycastPlane(e) {
+        const ndc = this.ndcFromEvent(e);
+        Scene3D.raycaster.setFromCamera(ndc, Scene3D.camera);
+        const plane = this.getConstructionPlane();
+        const target = new THREE.Vector3();
+        const hit = Scene3D.raycaster.ray.intersectPlane(plane, target);
+        return hit ? target : null;
+    },
+    pickObject(e) {
+        const ndc = this.ndcFromEvent(e);
+        // Guarantee matrices are current even if a render frame hasn't ticked yet
+        // (e.g. the very first interaction, or a throttled/backgrounded tab).
+        Scene3D.scene.updateMatrixWorld(true);
+        Scene3D.camera.updateMatrixWorld(true);
+        Scene3D.raycaster.setFromCamera(ndc, Scene3D.camera);
+        Scene3D.raycaster.params.Line.threshold = 0.08;
+        const pointHits = Scene3D.raycaster.intersectObjects(Scene3D.pointMeshes.map(m => m.mesh), false);
+        if (pointHits.length) { const m = Scene3D.pointMeshes.find(p => p.mesh === pointHits[0].object); return { type: 'point', id: m.id }; }
+        const vecHits = Scene3D.raycaster.intersectObjects(Scene3D.vectorMeshes.map(m => m.group), true);
+        if (vecHits.length) {
+            let obj = vecHits[0].object; while (obj && !obj.userData.vectorId && obj.parent) obj = obj.parent;
+            if (obj && obj.userData.vectorId !== undefined) return { type: 'vector', id: obj.userData.vectorId };
+        }
+        return null;
+    },
+    pickPointOnly(e) {
+        const hit = this.pickObject(e);
+        return hit && hit.type === 'point' ? hit : null;
+    },
+
+    bindEvents() {
+        const dom = Scene3D.renderer.domElement;
+        dom.addEventListener('contextmenu', ev => ev.preventDefault());
+
+        dom.addEventListener('pointerdown', ev => {
+            // Left-drag orbits by default; Alt+left-drag pans instead. Right button is
+            // free for the click-to-cancel-draft gesture (no drag behavior bound to it).
+            Scene3D.controls.mouseButtons.LEFT = (ev.button === 0 && ev.altKey) ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+            this.state.isDragging = false;
+            this.state.dragStart = { x: ev.clientX, y: ev.clientY, button: ev.button };
+        }, true);
+
+        dom.addEventListener('pointermove', ev => {
+            this.state.lastMouse = { clientX: ev.clientX, clientY: ev.clientY };
+            if (this.state.dragStart) {
+                const dx = ev.clientX - this.state.dragStart.x, dy = ev.clientY - this.state.dragStart.y;
+                if (Math.sqrt(dx * dx + dy * dy) > 4) this.state.isDragging = true;
+            }
+            const planeHit = this.raycastPlane(ev);
+            if (planeHit) {
+                const snapped = this.snapPoint(planeHit);
+                document.getElementById('coord-display').textContent = `x: ${snapped.x.toFixed(this.settings.precision)}, y: ${snapped.y.toFixed(this.settings.precision)}, z: ${snapped.z.toFixed(this.settings.precision)}`;
+            }
+            if (this.state.tool === 'select') {
+                const hit = this.pickObject(ev);
+                this.state.hover = hit;
+            }
+            if (this.state.tool === 'vector' && this.state.vectorDraft) {
+                let headPos = planeHit ? this.snapPoint(planeHit) : this.state.vectorDraft.tail;
+                const ptHit = this.pickPointOnly(ev);
+                if (ptHit) { const p = getPointById(this.model, ptHit.id); headPos = new THREE.Vector3(p.x, p.y, p.z); }
+                this.state.vectorDraft.previewHead = headPos;
+            }
+        });
+
+        dom.addEventListener('pointerup', ev => {
+            const wasDrag = this.state.isDragging;
+            this.state.dragStart = null;
+            this.state.isDragging = false;
+            if (wasDrag) return;
+            if (ev.button === 0) this.handleLeftClick(ev);
+            else if (ev.button === 2) this.handleRightClick(ev);
+        });
+
+        dom.addEventListener('dblclick', ev => {
+            const hit = this.pickObject(ev);
+            if (!hit) return;
+            let pos;
+            if (hit.type === 'point') { const p = getPointById(this.model, hit.id); pos = new THREE.Vector3(p.x, p.y, p.z); }
+            else { const r = this.resolved[hit.id]; if (!r) return; pos = new THREE.Vector3((r.tail.x + r.head.x) / 2, (r.tail.y + r.head.y) / 2, (r.tail.z + r.head.z) / 2); }
+            Scene3D.controls.target.copy(pos);
+            Scene3D.controls.update();
+        });
+
+        window.addEventListener('keydown', ev => {
+            const activeTag = document.activeElement && document.activeElement.tagName;
+            const typing = activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA';
+            if (ev.key === 'Escape') {
+                this.setTool('select');
+                this.closeModals();
+            } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && !typing) {
+                this.deleteSelected();
+            }
+        });
+    },
+
+    handleLeftClick(ev) {
+        if (this.state.tool === 'select') {
+            const hit = this.pickObject(ev);
+            if (!hit) { this.clearSelection(); this.refresh(); return; }
+            if (ev.shiftKey) this.toggleSelect(hit.type, hit.id);
+            else this.selectSingle(hit.type, hit.id);
+            return;
+        }
+        if (this.state.tool === 'point') {
+            const planeHit = this.raycastPlane(ev);
+            if (!planeHit) return;
+            const snapped = this.snapPoint(planeHit);
+            const point = addPoint(this.model, { x: snapped.x, y: snapped.y, z: snapped.z });
+            this.selectSingle('point', point.id);
+            this.showToast(`${point.name} created at (${snapped.x.toFixed(2)}, ${snapped.y.toFixed(2)}, ${snapped.z.toFixed(2)})`);
+            return;
+        }
+        if (this.state.tool === 'vector') {
+            const ptHit = this.pickPointOnly(ev);
+            const planeHit = this.raycastPlane(ev);
+            if (!planeHit && !ptHit) return;
+            let pos, pointId;
+            if (ptHit) { const p = getPointById(this.model, ptHit.id); pos = new THREE.Vector3(p.x, p.y, p.z); pointId = ptHit.id; }
+            else { pos = this.snapPoint(planeHit); pointId = null; }
+
+            if (!this.state.vectorDraft) {
+                this.state.vectorDraft = { tailPointId: pointId, tail: pos.clone(), previewHead: pos.clone() };
+                this.updateStatusHint();
+            } else {
+                const draft = this.state.vectorDraft;
+                if (draft.tail.distanceTo(pos) < 1e-6) { this.showToast('Vector has zero length — pick a different head location'); return; }
+                let vector;
+                if (draft.tailPointId !== null && pointId !== null) vector = addVectorBound(this.model, draft.tailPointId, pointId);
+                else vector = addVectorFree(this.model, draft.tail, pos);
+                this.state.vectorDraft = null;
+                this.selectSingle('vector', vector.id);
+                this.showToast(`${vector.name} created`);
+            }
+            return;
+        }
+    },
+
+    handleRightClick(ev) {
+        if (this.state.tool === 'vector' && this.state.vectorDraft) {
+            this.state.vectorDraft = null;
+            this.updateStatusHint();
+            this.refresh();
+        }
+    },
+
+    /* ---------------- point / vector editing ----------------
+       Direct numeric edits from the Properties panel inputs. Because
+       bound vectors store only point ids (see the model-helpers comment
+       above), editing a point's coordinates here and calling refresh()
+       automatically moves every vector bound to that point — no vector
+       needs to be touched directly. */
+    updatePointCoords(pointId, coords) {
+        const p = getPointById(this.model, pointId);
+        if (!p || p.isOrigin) return;
+        Object.assign(p, coords);
+        this.refresh();
+    },
+    updateVectorFreeCoords(vectorId, which, coords) {
+        const v = getVectorById(this.model, vectorId);
+        if (!v || v.type !== 'free' || v.source !== 'defined') return;
+        Object.assign(v[which], coords);
+        this.refresh();
+    },
+
+    /* ---------------- deletion with dependency cascade ----------------
+       Deleting a point or vector that other vectors/operations depend on
+       would otherwise leave "orphan" derived objects. These methods use
+       collectDependentOperationIds/collectDependentVectorIdsForPoint
+       (defined earlier, near the model helpers) to find the full
+       dependent chain, confirm with the user, then remove it bottom-up
+       (operation + its result vector, then the vector/point itself). */
+    deleteSelected() {
+        if (this.state.selectedOperationId) { this.deleteOperation(this.state.selectedOperationId); return; }
+        const items = this.state.selection.items.slice();
+        if (items.length === 0) return;
+        items.forEach(item => { if (item.type === 'point') this.deletePoint(item.id); else this.deleteVector(item.id); });
+    },
+    deletePoint(pointId) {
+        const p = getPointById(this.model, pointId);
+        if (!p || p.isOrigin) { this.showToast('The Origin cannot be deleted'); return; }
+        const dependentVectorIds = collectDependentVectorIdsForPoint(this.model, pointId);
+        let opIds = new Set();
+        dependentVectorIds.forEach(vid => collectDependentOperationIds(this.model, vid, opIds));
+        if (dependentVectorIds.length && !confirm(`${p.name} is used by ${dependentVectorIds.length} vector(s)` + (opIds.size ? ` and ${opIds.size} dependent operation(s)` : '') + `. Delete ${p.name} and cascade-remove them?`)) return;
+        opIds.forEach(id => this.removeOperationAndResult(id));
+        dependentVectorIds.forEach(id => this.removeVectorById(id));
+        this.model.points = this.model.points.filter(pt => pt.id !== pointId);
+        this.clearSelection();
+        this.refresh();
+        this.showToast(`${p.name} deleted`);
+    },
+    deleteVector(vectorId) {
+        const v = getVectorById(this.model, vectorId);
+        if (!v) return;
+        const opIds = collectDependentOperationIds(this.model, vectorId);
+        if (opIds.size && !confirm(`${v.name} is used by ${opIds.size} dependent operation(s). Delete ${v.name} and cascade-remove them?`)) return;
+        opIds.forEach(id => this.removeOperationAndResult(id));
+        this.removeVectorById(vectorId);
+        this.clearSelection();
+        this.refresh();
+        this.showToast(`${v.name} deleted`);
+    },
+    /* removes an operation and, if it produced a derived result vector, that vector too */
+    removeOperationAndResult(opId) {
+        const op = getOperationById(this.model, opId);
+        if (!op) return;
+        if (op.resultVectorId) this.removeVectorById(op.resultVectorId);
+        this.removeOperationById(opId);
+    },
+    deleteOperation(opId) {
+        const op = getOperationById(this.model, opId);
+        if (!op) return;
+        let cascadeIds = new Set();
+        if (op.resultVectorId) collectDependentOperationIds(this.model, op.resultVectorId, cascadeIds);
+        if (cascadeIds.size && !confirm(`${op.name} produces a vector used by ${cascadeIds.size} further operation(s). Delete ${op.name} and cascade-remove them?`)) return;
+        cascadeIds.forEach(id => this.removeOperationAndResult(id));
+        this.removeOperationAndResult(opId);
+        this.state.selectedOperationId = null;
+        this.refresh();
+        this.showToast(`${op.name} deleted`);
+    },
+    removeVectorById(id) { this.model.vectors = this.model.vectors.filter(v => v.id !== id); this.state.selection.items = this.state.selection.items.filter(i => !(i.type === 'vector' && i.id === id)); },
+    removeOperationById(id) { this.model.operations = this.model.operations.filter(o => o.id !== id); if (this.state.selectedOperationId === id) this.state.selectedOperationId = null; },
+
+    /* ---------------- operations ----------------
+       Entry point for the six math-tool buttons. Each branch validates
+       the current vector selection (right count, no zero vectors where
+       undefined), records a new `operation` row (see addOperation), and
+       — for operations that produce a new vector (normalize, add,
+       subtract, cross) — creates that result vector via
+       addVectorFromOperation and links it back with op.resultVectorId.
+       directionCosines and magnitude are "read-only" operations: they
+       don't create a new vector, only a properties-panel readout (see
+       renderOperationProperties) of the selected vector's own cosines/
+       angles or length. The actual arithmetic for each op type lives in
+       resolveAll(), which is re-run on every refresh(). */
+    performOperation(type) {
+        const ids = this.getSelectedVectorIds();
+        const geoms = ids.map(id => this.resolved[id]).filter(Boolean);
+
+        if (type === 'normalize') {
+            if (ids.length !== 1) return this.showToast('Select exactly one vector to normalize');
+            if (geoms[0].zero) return this.showToast('Cannot normalize a zero vector — magnitude is 0');
+            const idx = ++this.opTypeCounters.normalize;
+            const op = addOperation(this.model, 'normalize', ids, null, idx);
+            const resultVector = addVectorFromOperation(this.model, op.id);
+            op.resultVectorId = resultVector.id;
+            this.selectSingle('vector', resultVector.id);
+            this.showToast(`${resultVector.name} = unit(${getVectorById(this.model, ids[0]).name})`);
+            return;
+        }
+        if (type === 'add') {
+            if (ids.length < 2) return this.showToast('Select at least two vectors to add');
+            const idx = ++this.opTypeCounters.add;
+            const op = addOperation(this.model, 'add', ids, null, idx);
+            const resultVector = addVectorFromOperation(this.model, op.id);
+            op.resultVectorId = resultVector.id;
+            this.selectSingle('vector', resultVector.id);
+            this.showToast(`${resultVector.name} = ${ids.map(id => getVectorById(this.model, id).name).join(' + ')}`);
+            return;
+        }
+        if (type === 'subtract') {
+            if (ids.length < 2) return this.showToast('Select at least two vectors (order matters: first minus the rest)');
+            const idx = ++this.opTypeCounters.subtract;
+            const op = addOperation(this.model, 'subtract', ids, null, idx);
+            const resultVector = addVectorFromOperation(this.model, op.id);
+            op.resultVectorId = resultVector.id;
+            this.selectSingle('vector', resultVector.id);
+            const names = ids.map(id => getVectorById(this.model, id).name);
+            this.showToast(`${resultVector.name} = ${names[0]} - ${names.slice(1).join(' - ')}`);
+            return;
+        }
+        if (type === 'cross') {
+            if (ids.length !== 2) return this.showToast('Select exactly two vectors, in order, for the cross product');
+            if (geoms[0].zero || geoms[1].zero) return this.showToast('Cannot compute the cross product of a zero vector');
+            const idx = ++this.opTypeCounters.cross;
+            const op = addOperation(this.model, 'cross', ids, null, idx);
+            const resultVector = addVectorFromOperation(this.model, op.id);
+            op.resultVectorId = resultVector.id;
+            this.selectSingle('vector', resultVector.id);
+            const n = VectorMath.cross(geoms[0].v, geoms[1].v);
+            if (VectorMath.nearZero(n)) this.showToast('V1 and V2 are parallel — the cross product is the zero vector');
+            else this.showToast(`n = ${getVectorById(this.model, ids[0]).name} × ${getVectorById(this.model, ids[1]).name}`);
+            return;
+        }
+        if (type === 'directionCosines') {
+            if (ids.length !== 1) return this.showToast('Select exactly one vector for direction cosines');
+            if (geoms[0].zero) return this.showToast('Direction cosines are undefined for a zero vector');
+            const idx = ++this.opTypeCounters.directionCosines;
+            const op = addOperation(this.model, 'directionCosines', ids, null, idx);
+            this.selectOperation(op.id);
+            return;
+        }
+        if (type === 'magnitude') {
+            if (ids.length !== 1) return this.showToast('Select exactly one vector to inspect its magnitude');
+            const idx = ++this.opTypeCounters.magnitude;
+            const op = addOperation(this.model, 'magnitude', ids, null, idx);
+            this.selectOperation(op.id);
+            return;
+        }
+    },
+
+    /* ---------------- theme / settings / menus ---------------- */
+    /* Sets `data-theme` on <html> (driving the CSS custom-property
+       overrides described at the top of the <style> block), swaps the
+       theme-toggle icon, and — since Three.js materials/colors can't
+       read CSS variables directly — re-reads the new theme's colors via
+       getComputedStyleColor() and pushes them into the WebGL scene
+       through Scene3D.syncThemeColors(). */
+    applyTheme() {
+        document.documentElement.setAttribute('data-theme', this.settings.theme);
+        const icon = document.getElementById('theme-icon');
+        const btn = document.getElementById('theme-toggle-btn');
+        icon.className = this.settings.theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        btn.title = this.settings.theme === 'dark' ? 'Use light theme' : 'Use dark theme';
+        // Sync the WebGL viewport (background, grid, tick marks) to the new theme's CSS colors.
+        if (Scene3D.renderer) Scene3D.syncThemeColors();
+    },
+    toggleTheme() { this.settings.theme = this.settings.theme === 'dark' ? 'light' : 'dark'; this.applyTheme(); this.closeMenus && this.closeMenus(); },
+    toggleSetting(key) { this.settings[key] = !this.settings[key]; this.refresh(); this.closeMenus && this.closeMenus(); },
+
+    setCameraPreset(preset) { Scene3D.setCameraPreset(preset); this.closeMenus && this.closeMenus(); },
+    zoomIn() { Scene3D.dolly(0.8); },
+    zoomOut() { Scene3D.dolly(1.25); },
+    zoomExtents() {
+        const pts = [];
+        this.model.points.forEach(p => pts.push(new THREE.Vector3(p.x, p.y, p.z)));
+        pts.push(new THREE.Vector3(0, 0, 0));
+        this.model.vectors.forEach(v => { const r = this.resolved[v.id]; if (r) { pts.push(Scene3D.v3(r.tail)); pts.push(Scene3D.v3(r.head)); } });
+        const { center, radius } = Scene3D.fitExtentsData(pts);
+        Scene3D.setAxisExtent(Math.max(10, radius * 1.6));
+        Scene3D.applyFit(center, radius);
+        this.closeMenus && this.closeMenus();
+    },
+
+    initMenuBar() {
+        const dropdowns = [...document.querySelectorAll('.menubar .dropdown')];
+        const closeAll = (except) => dropdowns.forEach(d => { if (d !== except) { d.classList.remove('open'); const t = d.querySelector('.menu-trigger'); if (t) t.setAttribute('aria-expanded', 'false'); } });
+        dropdowns.forEach(dropdown => {
+            const trigger = dropdown.querySelector('.menu-trigger');
+            trigger.addEventListener('click', e => { e.stopPropagation(); const willOpen = !dropdown.classList.contains('open'); closeAll(dropdown); dropdown.classList.toggle('open', willOpen); trigger.setAttribute('aria-expanded', String(willOpen)); });
+            dropdown.querySelectorAll('.dropdown-content .menu-item').forEach(item => item.addEventListener('click', () => closeAll()));
+        });
+        document.addEventListener('click', e => { if (!e.target.closest('.menubar .dropdown')) closeAll(); });
+        this.closeMenus = closeAll;
+    },
+
+    openSettings() {
+        document.getElementById('set-theme').value = this.settings.theme;
+        document.getElementById('set-showgrid').checked = this.settings.showGrid;
+        document.getElementById('set-showaxes').checked = this.settings.showAxes;
+        document.getElementById('set-showlabels').checked = this.settings.showLabels;
+        document.getElementById('set-showaux').checked = this.settings.showAux;
+        document.getElementById('set-snap').checked = this.settings.snap;
+        document.getElementById('set-gridspacing').value = this.settings.gridSpacing;
+        document.getElementById('set-precision').value = this.settings.precision;
+        document.getElementById('set-plane').value = this.settings.constructionPlane;
+        document.getElementById('set-planeoffset').value = this.settings.constructionOffset;
+        document.getElementById('settings-modal').style.display = 'flex';
+        this.closeMenus && this.closeMenus();
+    },
+    saveSettings() {
+        this.settings.theme = document.getElementById('set-theme').value;
+        this.settings.showGrid = document.getElementById('set-showgrid').checked;
+        this.settings.showAxes = document.getElementById('set-showaxes').checked;
+        this.settings.showLabels = document.getElementById('set-showlabels').checked;
+        this.settings.showAux = document.getElementById('set-showaux').checked;
+        this.settings.snap = document.getElementById('set-snap').checked;
+        this.settings.gridSpacing = Math.max(0.01, parseFloat(document.getElementById('set-gridspacing').value) || 1);
+        this.settings.precision = Math.max(0, Math.min(8, parseInt(document.getElementById('set-precision').value) || 3));
+        this.settings.constructionPlane = document.getElementById('set-plane').value;
+        this.settings.constructionOffset = parseFloat(document.getElementById('set-planeoffset').value) || 0;
+        this.applyTheme();
+        this.updatePlaneIndicator();
+        this.closeModals();
+        this.refresh();
+    },
+    openAbout() { document.getElementById('about-modal').style.display = 'flex'; this.closeMenus && this.closeMenus(); },
+    closeModals() { document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none'); },
+
+    /* ---------------- file IO ----------------
+       The whole document is just JSON: serializeModel() picks out the
+       plain-data fields of `model` plus `settings` and hands them to
+       JSON.stringify (see executeSave); openModel() does the reverse,
+       parsing a chosen .json file back into `this.model` with some
+       defensive fallbacks for older/hand-edited files (e.g. recomputing
+       nextPointId/nextVectorId/nextOperationId if they're missing). */
+    serializeModel() {
+        return {
+            version: 1,
+            points: this.model.points,
+            vectors: this.model.vectors,
+            operations: this.model.operations,
+            nextPointId: this.model.nextPointId,
+            nextVectorId: this.model.nextVectorId,
+            nextOperationId: this.model.nextOperationId,
+            settings: this.settings
+        };
+    },
+    saveModel(saveAs) {
+        if (saveAs) { document.getElementById('save-modal').style.display = 'flex'; document.getElementById('save-filename').focus(); }
+        else this.executeSave('vectorlab_model.json');
+        this.closeMenus && this.closeMenus();
+    },
+    executeSave(filename) {
+        if (!filename) {
+            filename = document.getElementById('save-filename').value || 'vectorlab_model.json';
+            if (!filename.endsWith('.json')) filename += '.json';
+            this.closeModals();
+        }
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(this.serializeModel(), null, 2)], { type: 'application/json' }));
+        a.download = filename; a.click();
+        this.showToast('Model saved');
+    },
+    openModel() {
+        const input = document.createElement('input'); input.type = 'file'; input.accept = '.json';
+        input.onchange = e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = ev => {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    if (!data || !Array.isArray(data.points) || !Array.isArray(data.vectors) || !Array.isArray(data.operations)) throw new Error('Missing required fields');
+                    this.model = {
+                        version: 1,
+                        points: data.points,
+                        vectors: data.vectors,
+                        operations: data.operations,
+                        nextPointId: data.nextPointId || (Math.max(0, ...data.points.map(p => p.id)) + 1),
+                        nextVectorId: data.nextVectorId || (Math.max(0, ...data.vectors.map(v => v.id)) + 1),
+                        nextOperationId: data.nextOperationId || (Math.max(0, ...data.operations.map(o => o.id)) + 1)
+                    };
+                    this.opTypeCounters = { normalize: 0, add: 0, subtract: 0, cross: 0, directionCosines: 0, magnitude: 0 };
+                    this.model.operations.forEach(op => { if (op.typeIndex && this.opTypeCounters[op.type] !== undefined) this.opTypeCounters[op.type] = Math.max(this.opTypeCounters[op.type], op.typeIndex); });
+                    if (data.settings) Object.assign(this.settings, data.settings);
+                    this.state.selection = { items: [] };
+                    this.state.selectedOperationId = null;
+                    this.state.vectorDraft = null;
+                    this.applyTheme();
+                    this.updatePlaneIndicator();
+                    this.setTool('select');
+                    this.refresh();
+                    this.zoomExtents();
+                    this.showToast('Model loaded successfully');
+                } catch (err) {
+                    console.error(err);
+                    this.showToast('Invalid file format');
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+        this.closeMenus && this.closeMenus();
+    },
+    exportViewAsPNG() {
+        Scene3D.render();
+        const link = document.createElement('a');
+        link.download = 'vectorlab_view.png';
+        link.href = Scene3D.renderer.domElement.toDataURL('image/png');
+        link.click();
+        this.closeMenus && this.closeMenus();
+    },
+
+    showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg; t.style.opacity = 1;
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => t.style.opacity = 0, 2600);
+    },
+
+    fmt(n) { return Number.isFinite(n) ? n.toFixed(this.settings.precision) : '—'; },
+
+    /* ---------------- scene rebuild ----------------
+       Called by refresh() after every model/selection change: clears
+       Scene3D's dynamic group and repopulates it from the current model
+       — one mesh per visible point (addPointVisual), one arrow per
+       visible vector (addVectorVisual), and, for operations with
+       showAux on, the construction geometry that visualizes *how* the
+       result was obtained (addOperationAux, below). Rebuilding from
+       scratch each time is simpler than incremental scene diffing and
+       is cheap at the object counts this app targets. */
+    rebuildScene() {
+        Scene3D.clearDynamic();
+        Scene3D.staticGroup.visible = true;
+        Scene3D.gridXY.visible = this.settings.showGrid;
+        const anyAxisChild = Scene3D.staticGroup.children;
+        anyAxisChild.forEach(obj => { if (obj.userData.isAxis) obj.visible = this.settings.showAxes; });
+        Scene3D.gridXZ.visible = this.settings.showGrid && this.settings.showAux && this.settings.constructionPlane === 'XZ';
+        Scene3D.gridYZ.visible = this.settings.showGrid && this.settings.showAux && this.settings.constructionPlane === 'YZ';
+
+        if (this.settings.showLabels) {
+            Scene3D.staticLabels.forEach(l => Scene3D.labels.push({ text: l.text, pos: l.pos, cls: l.cls, color: l.color }));
+        }
+
+        // points
+        this.model.points.forEach(p => this.addPointVisual(p));
+        this.addPointVisual(ORIGIN_POINT);
+
+        // vectors
+        this.model.vectors.forEach(v => this.addVectorVisual(v));
+
+        // operation auxiliary geometry
+        if (this.settings.showAux) this.model.operations.forEach(op => { if (op.showAux) this.addOperationAux(op); });
+
+        this.updatePlaneIndicator();
+    },
+
+    addPointVisual(p) {
+        if (!p.visible) return;
+        const geom = new THREE.SphereGeometry(p.isOrigin ? 0.09 : 0.1, 18, 18);
+        const selected = this.isSelected('point', p.id);
+        const color = selected ? getComputedStyleColor('--select-color') : (p.isOrigin ? p.color : p.color);
+        const mat = new THREE.MeshPhongMaterial({ color, shininess: 60 });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.set(p.x, p.y, p.z);
+        if (selected) mesh.scale.setScalar(1.35);
+        else if (this.state.hover && this.state.hover.type === 'point' && this.state.hover.id === p.id) mesh.scale.setScalar(1.15);
+        Scene3D.dynamicGroup.add(mesh);
+        Scene3D.pointMeshes.push({ id: p.id, mesh });
+        if (this.settings.showLabels) {
+            const label = p.isOrigin ? null : `${p.name} (${this.fmt(p.x)}, ${this.fmt(p.y)}, ${this.fmt(p.z)})`;
+            if (label) Scene3D.addLabel(label, new THREE.Vector3(p.x, p.y, p.z), { cls: 'point-label', color: selected ? 'var(--select-color)' : getLabelColor(p.color) });
+        }
+    },
+
+    addVectorVisual(v) {
+        if (!v.visible) return;
+        const r = this.resolved[v.id];
+        if (!r) return;
+        const selected = this.isSelected('vector', v.id);
+        const hovered = this.state.hover && this.state.hover.type === 'vector' && this.state.hover.id === v.id;
+        const color = selected ? getComputedStyleColor('--select-color') : v.color;
+        const tail = Scene3D.v3(r.tail), head = Scene3D.v3(r.head);
+
+        if (r.zero) {
+            const marker = Scene3D.buildZeroMarker(tail, color);
+            Scene3D.dynamicGroup.add(marker);
+            Scene3D.vectorMeshes.push({ id: v.id, group: marker });
+            marker.userData.vectorId = v.id;
+            if (this.settings.showLabels) Scene3D.addLabel(`${v.name} (zero vector)`, tail, { color });
+            return;
+        }
+
+        const group = Scene3D.buildArrow(tail, head, color, { shaftRadius: selected ? 0.06 : (hovered ? 0.052 : 0.045) });
+        if (!group) return;
+        group.userData.vectorId = v.id;
+        group.traverse(o => { o.userData.vectorId = v.id; });
+        Scene3D.dynamicGroup.add(group);
+        Scene3D.vectorMeshes.push({ id: v.id, group });
+
+        if (this.settings.showLabels) {
+            const mid = new THREE.Vector3().addVectors(tail, head).multiplyScalar(0.5);
+            const labelText = this.buildVectorFormulaLabel(v);
+            Scene3D.addLabel(labelText, head.clone().lerp(mid, 0.35), { color: selected ? 'var(--select-color)' : getLabelColor(v.color) });
+        }
+    },
+
+    buildVectorFormulaLabel(v) {
+        if (v.source !== 'operation') return v.name.toLowerCase();
+        const op = getOperationById(this.model, v.operationId);
+        if (!op) return v.name.toLowerCase();
+        const inputNames = op.inputVectorIds.map(id => { const iv = getVectorById(this.model, id); return iv ? iv.name.toLowerCase() : '?'; });
+        if (op.type === 'cross') return `n = ${inputNames.join(' × ')}`;
+        if (op.type === 'add') return `${v.name.toLowerCase()} = ${inputNames.join(' + ')}`;
+        if (op.type === 'subtract') return `${v.name.toLowerCase()} = ${inputNames[0]} - ${inputNames.slice(1).join(' - ')}`;
+        if (op.type === 'normalize') return `${v.name.toLowerCase()}̂`;
+        return v.name.toLowerCase();
+    },
+
+    /* Dispatches to the right auxiliary-geometry builder per operation
+       type: dashed tip-to-tail construction arrows for add/subtract, a
+       translucent parallelogram spanning the two input vectors for
+       cross, and small angle arcs against the x/y/z axes for direction
+       cosines. This is purely visual scaffolding — none of it feeds
+       back into the model; it just illustrates the geometric meaning of
+       the algebra to a student. */
+    addOperationAux(op) {
+        if (op.type === 'add' || op.type === 'subtract') this.addTipToTailAux(op);
+        else if (op.type === 'cross') this.addCrossAux(op);
+        else if (op.type === 'directionCosines') this.addCosinesAux(op);
+    },
+
+    /* Classic "tip-to-tail" vector-sum construction: draws each input
+       vector as a translated, dashed copy starting where the previous
+       one ended (subtracting flips the sign of each vector after the
+       first). The chain's final point lands exactly on the resultant
+       vector's head, which is the standard geometric picture for why
+       vector addition works component-wise. */
+    addTipToTailAux(op) {
+        const inputs = op.inputVectorIds.map(id => this.resolved[id]).filter(Boolean);
+        if (inputs.length < 2) return;
+        let anchor = Scene3D.v3(inputs[0].tail);
+        const firstArrow = Scene3D.buildDashedArrow(anchor, Scene3D.v3(inputs[0].head), 0xdfe4ea);
+        if (firstArrow) Scene3D.dynamicGroup.add(firstArrow);
+        let cursor = new THREE.Vector3().addVectors(anchor, Scene3D.v3(inputs[0].v));
+        for (let i = 1; i < inputs.length; i++) {
+            let comp = inputs[i].v;
+            if (op.type === 'subtract') comp = VectorMath.scale(comp, -1);
+            const nextPoint = new THREE.Vector3().addVectors(cursor, Scene3D.v3(comp));
+            const arrow = Scene3D.buildDashedArrow(cursor, nextPoint, 0xdfe4ea);
+            if (arrow) Scene3D.dynamicGroup.add(arrow);
+            cursor = nextPoint;
+        }
+    },
+
+    addCrossAux(op) {
+        const i0 = this.resolved[op.inputVectorIds[0]], i1 = this.resolved[op.inputVectorIds[1]];
+        if (!i0 || !i1) return;
+        const anchor = Scene3D.v3(i0.tail);
+        const v1 = Scene3D.v3(i0.v), v2 = Scene3D.v3(i1.v);
+        const p0 = anchor.clone();
+        const p1 = anchor.clone().add(v1);
+        const p2 = anchor.clone().add(v1).add(v2);
+        const p3 = anchor.clone().add(v2);
+        if (VectorMath.nearZero(VectorMath.cross(i0.v, i1.v))) return;
+        const geom = new THREE.BufferGeometry();
+        const verts = new Float32Array([p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, p0.x, p0.y, p0.z, p2.x, p2.y, p2.z, p3.x, p3.y, p3.z]);
+        geom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+        geom.computeVertexNormals();
+        const mat = new THREE.MeshBasicMaterial({ color: 0x7c5cff, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
+        const plane = new THREE.Mesh(geom, mat);
+        Scene3D.dynamicGroup.add(plane);
+        const outlineGeom = new THREE.BufferGeometry().setFromPoints([p0, p1, p2, p3, p0]);
+        Scene3D.dynamicGroup.add(new THREE.Line(outlineGeom, new THREE.LineBasicMaterial({ color: 0x7c5cff, transparent: true, opacity: 0.6 })));
+        // dashed translated copies from common anchor when tails differ
+        if (anchor.distanceTo(Scene3D.v3(i1.tail)) > 1e-6) {
+            const a2 = Scene3D.buildDashedArrow(anchor, p3, 0x7c5cff);
+            if (a2) Scene3D.dynamicGroup.add(a2);
+        }
+    },
+
+    addCosinesAux(op) {
+        const r = this.resolved[op.inputVectorIds[0]];
+        if (!r || r.zero) return;
+        const tail = Scene3D.v3(r.tail);
+        const dir = Scene3D.v3(r.v).normalize();
+        const radius = Math.min(0.9, Math.max(0.4, Scene3D.v3(r.v).length() * 0.28));
+        const axes = [{ u: new THREE.Vector3(1, 0, 0), color: 0xff5c5c, label: 'α' }, { u: new THREE.Vector3(0, 1, 0), color: 0x4fd06a, label: 'β' }, { u: new THREE.Vector3(0, 0, 1), color: 0x4dabf7, label: 'γ' }];
+        axes.forEach(ax => {
+            const pts = Scene3D.buildArcPoints(tail, ax.u, dir, radius);
+            if (!pts) return;
+            const geom = new THREE.BufferGeometry().setFromPoints(pts);
+            Scene3D.dynamicGroup.add(new THREE.Line(geom, new THREE.LineBasicMaterial({ color: ax.color })));
+            if (this.settings.showLabels) Scene3D.addLabel(ax.label, pts[Math.floor(pts.length / 2)], { cls: 'angle-label', color: '#' + ax.color.toString(16).padStart(6, '0') });
+            // projection line from head to axis-component point
+            const headPt = Scene3D.v3(r.head);
+            let compPt;
+            if (ax.label === 'α') compPt = new THREE.Vector3(headPt.x, tail.y, tail.z);
+            else if (ax.label === 'β') compPt = new THREE.Vector3(tail.x, headPt.y, tail.z);
+            else compPt = new THREE.Vector3(tail.x, tail.y, headPt.z);
+            const dashGeom = new THREE.BufferGeometry().setFromPoints([headPt, compPt]);
+            const dashMat = new THREE.LineDashedMaterial({ color: ax.color, dashSize: 0.12, gapSize: 0.08, transparent: true, opacity: 0.7 });
+            const dashLine = new THREE.Line(dashGeom, dashMat);
+            dashLine.computeLineDistances();
+            Scene3D.dynamicGroup.add(dashLine);
+        });
+    },
+
+    /* Keeps the HTML label overlay (#label-layer) in sync with
+       Scene3D.labels every frame: reuses/creates one <div> per label,
+       positions it via Scene3D.screenPos() (3D world -> 2D screen), and
+       hides labels whose anchor point is currently behind the camera. */
+    updateLabelPositions() {
+        const layer = document.getElementById('label-layer');
+        const labels = Scene3D.labels;
+        while (layer.children.length < labels.length) { const d = document.createElement('div'); d.className = 'vlabel'; layer.appendChild(d); }
+        while (layer.children.length > labels.length) layer.removeChild(layer.lastChild);
+        labels.forEach((l, i) => {
+            const div = layer.children[i];
+            const sp = Scene3D.screenPos(l.pos);
+            if (!sp.visible) { div.style.display = 'none'; return; }
+            div.style.display = 'block';
+            div.className = 'vlabel ' + (l.cls || '');
+            div.style.left = sp.x + 'px';
+            div.style.top = sp.y + 'px';
+            div.style.color = l.color;
+            div.innerHTML = l.text;
+        });
+    },
+
+    /* ---------------- Working Tree ----------------
+       Renders the left-hand panel as three flat lists — Points, Vectors,
+       Operations — mirroring model.points/model.vectors/model.operations
+       exactly. Each row shows a short human-readable "formula" for how
+       that object was defined (e.g. "V2 = P1 → P3" for a bound vector,
+       or "V4 = V1 × V2" for a cross-product result) built from the live
+       resolved geometry, not just raw ids. */
+    updateWorkingTree() {
+        const tree = document.getElementById('tree-view');
+        let html = '';
+
+        html += `<div class="tree-section-title">Points (${this.model.points.length})</div>`;
+        html += this.treePointRow(ORIGIN_POINT, true);
+        this.model.points.forEach(p => { html += this.treePointRow(p, false); });
+
+        html += `<div class="tree-section-title">Vectors (${this.model.vectors.length})</div>`;
+        this.model.vectors.forEach(v => { html += this.treeVectorRow(v); });
+
+        html += `<div class="tree-section-title">Operations (${this.model.operations.length})</div>`;
+        this.model.operations.forEach(op => { html += this.treeOperationRow(op); });
+
+        tree.innerHTML = html;
+    },
+
+    treePointRow(p, isOrigin) {
+        const selected = isOrigin ? false : this.isSelected('point', p.id);
+        const icon = isOrigin ? '<span class="tree-icon"><i class="fas fa-crosshairs" style="color:var(--origin-color)"></i></span>' : `<span class="tree-dot" style="background:${p.color}"></span>`;
+        const label = isOrigin ? 'Origin (O)' : `Point ${p.id} (${p.name})`;
+        const clickAttr = isOrigin ? `onclick="App.selectSingle('point',0)"` : `onclick="App.handleTreeClick(event,'point',${p.id})"`;
+        return `<div class="tree-item ${selected ? 'selected' : ''}" ${clickAttr}><span class="tree-item-left">${icon}<span>${label}</span></span></div>`;
+    },
+
+    treeVectorRow(v) {
+        const selected = this.isSelected('vector', v.id);
+        const orderIdx = this.state.selection.items.findIndex(i => i.type === 'vector' && i.id === v.id);
+        const badge = orderIdx >= 0 && this.getSelectedVectorIds().length > 1 ? `<span class="tree-order-badge">${orderIdx + 1}</span>` : '';
+        const icon = `<span class="tree-icon" style="color:${v.color}"><i class="fas fa-arrow-right"></i></span>`;
+        let formula;
+        if (v.type === 'bound') {
+            const tp = getPointById(this.model, v.tailPointId), hp = getPointById(this.model, v.headPointId);
+            formula = `${v.name} = ${tp ? tp.name : '?'} → ${hp ? hp.name : '?'}`;
+        } else if (v.source === 'defined') {
+            const r = this.resolved[v.id];
+            formula = r ? `${v.name} = (${this.fmt(r.tail.x)}, ${this.fmt(r.tail.y)}, ${this.fmt(r.tail.z)}) → (${this.fmt(r.head.x)}, ${this.fmt(r.head.y)}, ${this.fmt(r.head.z)})` : v.name;
+        } else {
+            const op = getOperationById(this.model, v.operationId);
+            const inputNames = op ? op.inputVectorIds.map(id => (getVectorById(this.model, id) || {}).name || '?') : [];
+            const sym = op ? OP_SYMBOL[op.type] : '';
+            if (op && op.type === 'normalize') formula = `${v.name} = ${sym}(${inputNames[0]})`;
+            else if (op && op.type === 'cross') formula = `${v.name} = ${inputNames.join(' × ')}`;
+            else if (op && op.type === 'subtract') formula = `${v.name} = ${inputNames[0]} - ${inputNames.slice(1).join(' - ')}`;
+            else formula = `${v.name} = ${inputNames.join(' + ')}`;
+        }
+        const tag = v.source === 'defined' ? '(def)' : '(op)';
+        return `<div class="tree-item ${selected ? 'selected' : ''}" onclick="App.handleTreeClick(event,'vector',${v.id})"><span class="tree-item-left">${icon}<span>${formula}</span></span><span class="tree-item-left">${badge}<span class="tree-item-status">${tag}</span></span></div>`;
+    },
+
+    treeOperationRow(op) {
+        const selected = this.state.selectedOperationId === op.id;
+        const sym = OP_SYMBOL[op.type] || '';
+        const icon = `<span class="tree-icon" style="color:var(--accent)">${sym}</span>`;
+        const resultVector = op.resultVectorId ? getVectorById(this.model, op.resultVectorId) : null;
+        return `<div class="tree-item ${selected ? 'selected' : ''}" onclick="App.selectOperation(${op.id})"><span class="tree-item-left">${icon}<span>${op.name}</span></span><span class="tree-item-status">${resultVector ? '(' + resultVector.name + ')' : ''}</span></div>`;
+    },
+
+    handleTreeClick(ev, type, id) {
+        if (ev.shiftKey) this.toggleSelect(type, id); else this.selectSingle(type, id);
+    },
+
+    /* ---------------- Properties panel ----------------
+       Renders the right-hand panel based on what's currently selected:
+       a single point (renderPointProperties), a single vector
+       (renderVectorProperties — components, magnitude, unit vector,
+       direction cosines/angles), a single operation
+       (renderOperationProperties — its inputs and computed result), or
+       a multi-selection summary (renderMultiSelectionProperties, which
+       also surfaces pairwise dot product / angle / parallel / orthogonal
+       facts for exactly two selected vectors). Each render* function
+       returns an HTML string; the matching bind*PropertyEvents()
+       function then wires up its input listeners after it's inserted
+       into the DOM. */
+    updateProperties() {
+        const el = document.getElementById('props-view');
+        if (this.state.selectedOperationId) { el.innerHTML = this.renderOperationProperties(getOperationById(this.model, this.state.selectedOperationId)); this.bindOperationPropertyEvents(); return; }
+        const items = this.state.selection.items;
+        if (items.length === 0) { el.innerHTML = `<div style="color:var(--text-muted);text-align:center;margin-top:20px;line-height:1.5">Select a point or vector to view its properties.</div>`; return; }
+        if (items.length === 1 && items[0].type === 'point') { el.innerHTML = this.renderPointProperties(getPointById(this.model, items[0].id)); this.bindPointPropertyEvents(items[0].id); return; }
+        if (items.length === 1 && items[0].type === 'vector') { el.innerHTML = this.renderVectorProperties(getVectorById(this.model, items[0].id)); this.bindVectorPropertyEvents(items[0].id); return; }
+        el.innerHTML = this.renderMultiSelectionProperties(items);
+    },
+
+    renderPointProperties(p) {
+        if (!p) return '';
+        const isOrigin = !!p.isOrigin;
+        let html = `<div class="prop-group"><div class="prop-heading"><span class="status-dot" style="background:${p.color}"></span>${isOrigin ? 'Origin (O)' : 'Point ' + p.id + ' (' + p.name + ')'}</div>
+            <div class="prop-row"><span class="prop-label">x</span><input type="number" step="0.1" class="prop-val" id="pp-x" value="${p.x.toFixed(this.settings.precision)}" ${isOrigin ? 'disabled' : ''}></div>
+            <div class="prop-row"><span class="prop-label">y</span><input type="number" step="0.1" class="prop-val" id="pp-y" value="${p.y.toFixed(this.settings.precision)}" ${isOrigin ? 'disabled' : ''}></div>
+            <div class="prop-row"><span class="prop-label">z</span><input type="number" step="0.1" class="prop-val" id="pp-z" value="${p.z.toFixed(this.settings.precision)}" ${isOrigin ? 'disabled' : ''}></div>
+            <div class="prop-row"><span class="prop-label">Color</span><input type="color" class="prop-val" id="pp-color" value="${p.color}" ${isOrigin ? 'disabled' : ''}></div>
+            <div class="prop-row"><span class="prop-label">Visible</span><input type="checkbox" class="prop-val" id="pp-visible" ${p.visible ? 'checked' : ''} ${isOrigin ? 'disabled' : ''}></div>
+            </div>`;
+        if (isOrigin) html += `<div class="info-box">The Origin is the fixed reference point (0, 0, 0) and cannot be edited or deleted.</div>`;
+        else html += `<button class="action-btn btn-danger" id="pp-delete">× Delete Point</button>`;
+        return html;
+    },
+    bindPointPropertyEvents(id) {
+        const p = getPointById(this.model, id);
+        if (!p || p.isOrigin) return;
+        ['x', 'y', 'z'].forEach(axis => {
+            document.getElementById('pp-' + axis).addEventListener('change', e => { const val = parseFloat(e.target.value); if (Number.isFinite(val)) this.updatePointCoords(id, { [axis]: val }); });
+        });
+        document.getElementById('pp-color').addEventListener('input', e => { p.color = e.target.value; this.refresh(); });
+        document.getElementById('pp-visible').addEventListener('change', e => { p.visible = e.target.checked; this.refresh(); });
+        const del = document.getElementById('pp-delete'); if (del) del.addEventListener('click', () => this.deletePoint(id));
+    },
+
+    renderVectorProperties(v) {
+        if (!v) return '';
+        const r = this.resolved[v.id] || { tail: { x: 0, y: 0, z: 0 }, head: { x: 0, y: 0, z: 0 }, v: { x: 0, y: 0, z: 0 }, zero: true };
+        const isDerived = v.source === 'operation';
+        const f = n => this.fmt(n);
+        const unit = VectorMath.normalize(r.v);
+        const cos = VectorMath.directionCosines(r.v);
+        const ang = VectorMath.directionAngles(r.v);
+        const mag = VectorMath.magnitude(r.v);
+
+        let html = `<div class="prop-group"><div class="prop-heading"><span class="status-dot" style="background:${v.color}"></span>${v.name}
+            <input type="text" class="prop-val" id="vp-name" value="${v.name}" style="width:70px;margin-left:auto"></div>`;
+
+        if (v.type === 'bound') {
+            const tp = getPointById(this.model, v.tailPointId), hp = getPointById(this.model, v.headPointId);
+            html += `<div class="prop-row"><span class="prop-label">Tail point</span><span>${tp ? tp.name : '?'} (${f(r.tail.x)}, ${f(r.tail.y)}, ${f(r.tail.z)})</span></div>
+                <div class="prop-row"><span class="prop-label">Head point</span><span>${hp ? hp.name : '?'} (${f(r.head.x)}, ${f(r.head.y)}, ${f(r.head.z)})</span></div>`;
+        } else if (!isDerived) {
+            html += `<div class="prop-row"><span class="prop-label">Tail x</span><input type="number" step="0.1" class="prop-val" id="vp-tx" value="${r.tail.x.toFixed(this.settings.precision)}"></div>
+                <div class="prop-row"><span class="prop-label">Tail y</span><input type="number" step="0.1" class="prop-val" id="vp-ty" value="${r.tail.y.toFixed(this.settings.precision)}"></div>
+                <div class="prop-row"><span class="prop-label">Tail z</span><input type="number" step="0.1" class="prop-val" id="vp-tz" value="${r.tail.z.toFixed(this.settings.precision)}"></div>
+                <div class="prop-row"><span class="prop-label">Head x</span><input type="number" step="0.1" class="prop-val" id="vp-hx" value="${r.head.x.toFixed(this.settings.precision)}"></div>
+                <div class="prop-row"><span class="prop-label">Head y</span><input type="number" step="0.1" class="prop-val" id="vp-hy" value="${r.head.y.toFixed(this.settings.precision)}"></div>
+                <div class="prop-row"><span class="prop-label">Head z</span><input type="number" step="0.1" class="prop-val" id="vp-hz" value="${r.head.z.toFixed(this.settings.precision)}"></div>`;
+        } else {
+            html += `<div class="prop-row"><span class="prop-label">Tail</span><span>(${f(r.tail.x)}, ${f(r.tail.y)}, ${f(r.tail.z)})</span></div>
+                <div class="prop-row"><span class="prop-label">Head</span><span>(${f(r.head.x)}, ${f(r.head.y)}, ${f(r.head.z)})</span></div>`;
+        }
+        html += `</div>`;
+
+        html += `<div class="prop-group"><div class="prop-subheading">Components</div>
+            <div class="prop-row"><span class="prop-label">Vx</span><span>${f(r.v.x)}</span></div>
+            <div class="prop-row"><span class="prop-label">Vy</span><span>${f(r.v.y)}</span></div>
+            <div class="prop-row"><span class="prop-label">Vz</span><span>${f(r.v.z)}</span></div>
+            <div class="prop-row"><span class="prop-label">Magnitude</span><span>${f(mag)}</span></div>`;
+        if (r.zero) {
+            html += `<div class="warn-box" style="margin-top:8px">This is the <strong>zero vector</strong> — unit vector and direction cosines are undefined.</div>`;
+        } else {
+            html += `<div class="prop-row"><span class="prop-label">Unit Vector</span><span>(${f(unit.x)}, ${f(unit.y)}, ${f(unit.z)})</span></div>
+                <div class="prop-row"><span class="prop-label">cos(&alpha;)</span><span>${f(cos.cosA)}</span></div>
+                <div class="prop-row"><span class="prop-label">cos(&beta;)</span><span>${f(cos.cosB)}</span></div>
+                <div class="prop-row"><span class="prop-label">cos(&gamma;)</span><span>${f(cos.cosG)}</span></div>
+                <div class="prop-row"><span class="prop-label">&alpha;</span><span>${f(VectorMath.rad2deg(ang.alpha))}&deg;</span></div>
+                <div class="prop-row"><span class="prop-label">&beta;</span><span>${f(VectorMath.rad2deg(ang.beta))}&deg;</span></div>
+                <div class="prop-row"><span class="prop-label">&gamma;</span><span>${f(VectorMath.rad2deg(ang.gamma))}&deg;</span></div>`;
+        }
+        html += `</div>`;
+
+        html += `<div class="prop-group"><div class="prop-subheading">Metadata</div>
+            <div class="prop-row"><span class="prop-label">Type</span><span>${v.type === 'bound' ? 'Bound Vector' : 'Free Vector'}</span></div>
+            <div class="prop-row"><span class="prop-label">Source</span><span>${isDerived ? 'Operation' : 'Defined'}</span></div>
+            <div class="prop-row"><span class="prop-label">Color</span><input type="color" class="prop-val" id="vp-color" value="${v.color}"></div>
+            <div class="prop-row"><span class="prop-label">Visible</span><input type="checkbox" class="prop-val" id="vp-visible" ${v.visible ? 'checked' : ''}></div>
+            </div>
+            <button class="action-btn btn-danger" id="vp-delete">× Delete Vector</button>`;
+        return html;
+    },
+    bindVectorPropertyEvents(id) {
+        const v = getVectorById(this.model, id);
+        if (!v) return;
+        document.getElementById('vp-name').addEventListener('change', e => { const val = e.target.value.trim(); if (val) v.name = val; this.refresh(); });
+        document.getElementById('vp-color').addEventListener('input', e => { v.color = e.target.value; this.refresh(); });
+        document.getElementById('vp-visible').addEventListener('change', e => { v.visible = e.target.checked; this.refresh(); });
+        document.getElementById('vp-delete').addEventListener('click', () => this.deleteVector(id));
+        if (v.type === 'free' && v.source === 'defined') {
+            ['tx', 'ty', 'tz', 'hx', 'hy', 'hz'].forEach(key => {
+                const elm = document.getElementById('vp-' + key);
+                if (!elm) return;
+                elm.addEventListener('change', e => {
+                    const val = parseFloat(e.target.value); if (!Number.isFinite(val)) return;
+                    const which = key[0] === 't' ? 'tail' : 'head';
+                    const axis = key[1];
+                    this.updateVectorFreeCoords(id, which, { [axis]: val });
+                });
+            });
+        }
+    },
+
+    renderOperationProperties(op) {
+        if (!op) return '';
+        const inputVectors = op.inputVectorIds.map(id => getVectorById(this.model, id)).filter(Boolean);
+        const inputGeoms = op.inputVectorIds.map(id => this.resolved[id]).filter(Boolean);
+        const f = n => this.fmt(n);
+        let html = `<div class="prop-group"><div class="prop-heading">${op.name}</div>
+            <div class="prop-row"><span class="prop-label">Type</span><span>${OP_LABELS[op.type]}</span></div>
+            <div class="prop-row"><span class="prop-label">Inputs (order)</span><span>${inputVectors.map((v, i) => (i + 1) + ':' + v.name).join('  ')}</span></div>`;
+
+        if (op.type === 'directionCosines') {
+            const geom = inputGeoms[0];
+            const mag = VectorMath.magnitude(geom.v);
+            const cos = VectorMath.directionCosines(geom.v);
+            const ang = VectorMath.directionAngles(geom.v);
+            html += `</div><div class="prop-group"><div class="prop-subheading">Direction Cosines of ${inputVectors[0].name}</div>
+                <div class="prop-row"><span class="prop-label">Vx</span><span>${f(geom.v.x)}</span></div>
+                <div class="prop-row"><span class="prop-label">Vy</span><span>${f(geom.v.y)}</span></div>
+                <div class="prop-row"><span class="prop-label">Vz</span><span>${f(geom.v.z)}</span></div>
+                <div class="prop-row"><span class="prop-label">&Vert;v&Vert;</span><span>${f(mag)}</span></div>
+                <div class="prop-row"><span class="prop-label">cos(&alpha;)</span><span>${f(cos.cosA)}</span></div>
+                <div class="prop-row"><span class="prop-label">cos(&beta;)</span><span>${f(cos.cosB)}</span></div>
+                <div class="prop-row"><span class="prop-label">cos(&gamma;)</span><span>${f(cos.cosG)}</span></div>
+                <div class="prop-row"><span class="prop-label">&alpha;</span><span>${f(VectorMath.rad2deg(ang.alpha))}&deg;</span></div>
+                <div class="prop-row"><span class="prop-label">&beta;</span><span>${f(VectorMath.rad2deg(ang.beta))}&deg;</span></div>
+                <div class="prop-row"><span class="prop-label">&gamma;</span><span>${f(VectorMath.rad2deg(ang.gamma))}&deg;</span></div></div>`;
+        } else if (op.type === 'magnitude') {
+            const geom = inputGeoms[0];
+            const mag = VectorMath.magnitude(geom.v);
+            const unit = VectorMath.normalize(geom.v);
+            html += `</div><div class="prop-group"><div class="prop-subheading">Magnitude of ${inputVectors[0].name}</div>
+                <div class="prop-row"><span class="prop-label">(Vx, Vy, Vz)</span><span>(${f(geom.v.x)}, ${f(geom.v.y)}, ${f(geom.v.z)})</span></div>
+                <div class="prop-row"><span class="prop-label">Tail</span><span>(${f(geom.tail.x)}, ${f(geom.tail.y)}, ${f(geom.tail.z)})</span></div>
+                <div class="prop-row"><span class="prop-label">Head</span><span>(${f(geom.head.x)}, ${f(geom.head.y)}, ${f(geom.head.z)})</span></div>
+                <div class="prop-row"><span class="prop-label">&Vert;v&Vert;</span><span><strong>${f(mag)}</strong></span></div>
+                ${unit ? `<div class="prop-row"><span class="prop-label">Unit Vector</span><span>(${f(unit.x)}, ${f(unit.y)}, ${f(unit.z)})</span></div>` : `<div class="warn-box">Zero vector — unit vector undefined.</div>`}</div>`;
+        } else {
+            const resultVector = op.resultVectorId ? getVectorById(this.model, op.resultVectorId) : null;
+            const rr = op.resultVectorId ? this.resolved[op.resultVectorId] : null;
+            html += `</div><div class="prop-group"><div class="prop-subheading">Result</div>`;
+            if (resultVector && rr) {
+                html += `<div class="prop-row"><span class="prop-label">Result vector</span><span>${resultVector.name}</span></div>
+                    <div class="prop-row"><span class="prop-label">Components</span><span>(${f(rr.v.x)}, ${f(rr.v.y)}, ${f(rr.v.z)})</span></div>
+                    <div class="prop-row"><span class="prop-label">Magnitude</span><span>${f(VectorMath.magnitude(rr.v))}</span></div>`;
+                if (op.type === 'cross') {
+                    const angle = VectorMath.angleBetween(inputGeoms[0].v, inputGeoms[1].v);
+                    html += `<div class="prop-row"><span class="prop-label">Angle between inputs</span><span>${angle !== null ? f(VectorMath.rad2deg(angle)) + '&deg;' : '&mdash;'}</span></div>
+                        <div class="prop-row"><span class="prop-label">Parallelogram area</span><span>${f(VectorMath.magnitude(rr.v))}</span></div>`;
+                    if (rr.zero) html += `<div class="warn-box">Inputs are parallel (or one is zero) — the cross product is the zero vector; no plane normal is defined.</div>`;
+                }
+            } else {
+                html += `<div class="warn-box">Result vector is unavailable.</div>`;
+            }
+            html += `</div>`;
+        }
+
+        html += `<div class="prop-group"><div class="prop-row"><span class="prop-label">Show auxiliary geometry</span><input type="checkbox" class="prop-val" id="op-showaux" ${op.showAux ? 'checked' : ''}></div></div>
+            <button class="action-btn btn-danger" id="op-delete">× Delete Operation</button>`;
+        return html;
+    },
+    bindOperationPropertyEvents() {
+        const op = getOperationById(this.model, this.state.selectedOperationId);
+        if (!op) return;
+        const chk = document.getElementById('op-showaux'); if (chk) chk.addEventListener('change', e => { op.showAux = e.target.checked; this.refresh(); });
+        const del = document.getElementById('op-delete'); if (del) del.addEventListener('click', () => this.deleteOperation(op.id));
+    },
+
+    renderMultiSelectionProperties(items) {
+        const vectorIds = items.filter(i => i.type === 'vector').map(i => i.id);
+        const pointIds = items.filter(i => i.type === 'point').map(i => i.id);
+        let html = `<div class="prop-group"><div class="prop-heading">${items.length} objects selected</div>`;
+        if (vectorIds.length) {
+            html += `<div class="prop-subheading">Selected vectors (order)</div>`;
+            vectorIds.forEach((id, i) => { const v = getVectorById(this.model, id); html += `<div class="prop-row"><span class="prop-label">${i + 1}: ${v ? v.name : '?'}</span></div>`; });
+        }
+        if (pointIds.length) {
+            html += `<div class="prop-subheading" style="margin-top:8px">Selected points</div>`;
+            pointIds.forEach(id => { const p = getPointById(this.model, id); html += `<div class="prop-row"><span class="prop-label">${p ? p.name : '?'}</span></div>`; });
+        }
+        html += `</div>`;
+
+        if (vectorIds.length >= 2) {
+            const valid = { normalize: vectorIds.length === 1, add: vectorIds.length >= 2, subtract: vectorIds.length >= 2, cross: vectorIds.length === 2, directionCosines: vectorIds.length === 1, magnitude: vectorIds.length === 1 };
+            html += `<div class="prop-group"><div class="prop-subheading">Valid Operations</div>` +
+                Object.entries(valid).filter(([, ok]) => ok).map(([k]) => `<div class="prop-row"><span class="prop-label">${OP_LABELS[k]}</span></div>`).join('') + `</div>`;
+        }
+        if (vectorIds.length === 2) {
+            const g0 = this.resolved[vectorIds[0]], g1 = this.resolved[vectorIds[1]];
+            if (g0 && g1) {
+                const dot = VectorMath.dot(g0.v, g1.v);
+                const angle = VectorMath.angleBetween(g0.v, g1.v);
+                const parallel = angle !== null && (angle < 1e-3 || Math.abs(angle - Math.PI) < 1e-3);
+                const orthogonal = Math.abs(dot) < 1e-6 && !g0.zero && !g1.zero;
+                html += `<div class="prop-group"><div class="prop-subheading">Pair Properties</div>
+                    <div class="prop-row"><span class="prop-label">Dot product</span><span>${this.fmt(dot)}</span></div>
+                    <div class="prop-row"><span class="prop-label">Angle</span><span>${angle !== null ? this.fmt(VectorMath.rad2deg(angle)) + '&deg;' : '&mdash;'}</span></div>
+                    <div class="prop-row"><span class="prop-label">Parallel</span><span>${parallel ? 'Yes' : 'No'}</span></div>
+                    <div class="prop-row"><span class="prop-label">Orthogonal</span><span>${orthogonal ? 'Yes' : 'No'}</span></div>
+                    </div>`;
+            }
+        }
+        return html;
+    },
+
+    updateStatusBar() {
+        document.getElementById('status-points').textContent = this.model.points.length;
+        document.getElementById('status-vectors').textContent = this.model.vectors.length;
+        document.getElementById('status-operations').textContent = this.model.operations.length;
+        this.updateStatusHint();
+    }
+};
+
+/* Three.js materials need actual color values (hex/rgb), not CSS
+   var(--name) references, so this resolves a custom property's current
+   value straight from the live CSS cascade via getComputedStyle. Used
+   whenever the WebGL scene needs to match the current theme's colors
+   (e.g. the canvas background, grid lines, or the selection highlight). */
+function getComputedStyleColor(varName) {
+    const val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    return val || '#33e0ff';
+}
+
+window.onload = () => App.init();
+</script>
+</body>
+</html>
