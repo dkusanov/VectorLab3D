@@ -129,7 +129,7 @@
        icon, so a student sees familiar textbook symbols for each vector
        operation (normalize, add, subtract, cross product, direction
        cosines, magnitude) instead of a generic toolbar glyph. */
-    .tool-btn.math-tool { width: 38px; font-size: 13px; font-style: italic; font-family: 'Cambria Math', 'STIX Two Math', Georgia, serif; }
+    .tool-btn.math-tool { width: 38px; font-size: 18px; font-style: italic; font-family: 'Cambria Math', 'STIX Two Math', Georgia, serif; }
     .tool-btn[title]:hover::after { content: attr(title); position: absolute; top: 42px; left: 50%; transform: translateX(-50%); background: #000; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; z-index: 100; pointer-events: none; }
     .tool-btn:focus-visible, .menu-item:focus-visible, .action-btn:focus-visible, .theme-btn:focus-visible { outline: 2px solid var(--select-color); outline-offset: 1px; }
 
@@ -302,8 +302,8 @@
             <button class="tool-btn math-tool" id="op-add" title="Add vectors (+v)" aria-label="Add vectors" onclick="App.performOperation('add')">+v</button>
             <button class="tool-btn math-tool" id="op-subtract" title="Subtract vectors (&minus;v)" aria-label="Subtract vectors" onclick="App.performOperation('subtract')">&minus;v</button>
             <button class="tool-btn math-tool" id="op-cross" title="Cross product (&times;)" aria-label="Cross product" onclick="App.performOperation('cross')">&times;</button>
-            <button class="tool-btn math-tool" id="op-cosines" title="Direction cosines cos(&middot;)" aria-label="Direction cosines" onclick="App.performOperation('directionCosines')" style="width:46px">cos(&middot;)</button>
-            <button class="tool-btn math-tool" id="op-magnitude" title="Magnitude &Vert;v&Vert;" aria-label="Vector magnitude" onclick="App.performOperation('magnitude')" style="width:42px">&Vert; v &Vert;</button>
+            <button class="tool-btn math-tool" id="op-cosines" title="Direction cosines cos(&middot;)" aria-label="Direction cosines" onclick="App.performOperation('directionCosines')" style="width:46px">&theta;</button>
+            <button class="tool-btn math-tool" id="op-magnitude" title="Magnitude &Vert;v&Vert;" aria-label="Vector magnitude" onclick="App.performOperation('magnitude')" style="width:42px">&Vert;v&Vert;</button>
         </div>
         <div class="tool-group">
             <button class="tool-btn" title="Zoom In" aria-label="Zoom in" onclick="App.zoomIn()"><i class="fas fa-search-plus"></i></button>
