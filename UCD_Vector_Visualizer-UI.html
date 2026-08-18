@@ -552,7 +552,40 @@ const VectorMath = {
 /*     automatically stays correct if an upstream vector changes.     */
 /* ------------------------------------------------------------------ */
 const ORIGIN_POINT = { id: 0, name: 'O', x: 0, y: 0, z: 0, color: '#4dabf7', visible: true, isOrigin: true }; // the fixed (0,0,0) reference point; reserved id 0, never stored in model.points
-const VECTOR_PALETTE = ['#ffd43b', '#22d3ee', '#f472b6', '#84cc16', '#a78bfa', '#fb923c', '#f87171', '#34d399', '#60a5fa', '#e879f9'];
+const VECTOR_PALETTE = [
+    '#FFD43B', // Yellow
+    '#FCC419', // Golden yellow
+    '#FAB005', // Amber
+    '#F59F00', // Dark amber
+    '#FF922B', // Light orange
+    '#FD7E14', // Orange
+    '#F76707', // Burnt orange
+    '#E8590C', // Dark orange
+    '#FF6B6B', // Coral
+    '#FA5252', // Bright red
+    '#F03E3E', // Red
+    '#E03131', // Dark red
+    '#F783AC', // Light pink
+    '#F06595', // Pink
+    '#E64980', // Rose
+    '#D6336C', // Raspberry
+    '#DA77F2', // Light orchid
+    '#CC5DE8', // Orchid
+    '#BE4BDB', // Purple
+    '#AE3EC9', // Dark purple
+    '#B197FC', // Light violet
+    '#9775FA', // Violet
+    '#845EF7', // Deep violet
+    '#7048E8', // Indigo
+    '#5C7CFA', // Light royal blue
+    '#4263EB', // Royal blue
+    '#364FC7', // Deep blue
+    '#51CF66', // Bright green
+    '#37B24D', // Green
+    '#94D82D', // Lime green
+    '#74B816', // Olive green
+    '#A65F2E'  // Brown
+];
 const OP_LABELS = { normalize: 'Normalize', add: 'Addition', subtract: 'Subtraction', cross: 'Cross', directionCosines: 'Cosines', magnitude: 'Magnitude' };
 const OP_SYMBOL = { normalize: 'v&#770;', add: '+', subtract: '&minus;', cross: '&times;', directionCosines: 'cos', magnitude: '&Vert;&middot;&Vert;' };
 
